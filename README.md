@@ -92,7 +92,9 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The Release workflow builds the installers on macOS, Windows and Linux and attaches them to a draft GitHub Release, together with the `latest*.yml` files, zips and blockmaps the updater reads; review the notes and publish it. Installed apps see the new version only once the release is published (drafts and pre-releases are ignored), so don't delete those extra files from it. Running the workflow by hand only builds the installers and keeps them as workflow artifacts. Local `npm run dist` packages for the current OS only.
+Or, without a terminal: **Actions → Release → Run workflow** on `main` with **release** ticked; it creates the tag from `package.json` itself.
+
+The Release workflow builds the installers on macOS, Windows and Linux and attaches them to a draft GitHub Release, together with the `latest*.yml` files, zips and blockmaps the updater reads; review the notes and publish it. Installed apps see the new version only once the release is published (drafts and pre-releases are ignored), so don't delete those extra files from it. Running the workflow by hand without **release** only builds the installers and keeps them as workflow artifacts. Local `npm run dist` packages for the current OS only.
 
 ## Roadmap
 
