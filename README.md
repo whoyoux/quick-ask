@@ -7,8 +7,26 @@ Hold a key, ask out loud, let go, and the answer appears in a chat window; while
 - **Push-to-talk**: hold right Ctrl (right Option on macOS) while you speak, release to send.
 - **Follow-ups**: while the chat window is open, hold the key again (or type) to continue the same conversation. Close it and the next question starts fresh.
 - **Any model**: bring your own [OpenRouter](https://openrouter.ai) key and pick the answering and transcription models from the tray menu.
-- **Tools**: the model can run JavaScript in a sandbox for exact math and data work (paste a table and ask), draw charts, convert currencies at the National Bank of Poland's rates, check the weather and convert between time zones. Each one can be switched off under **Narzędzia AI** in the tray.
+- **Tools**: the model can search the web, calculate and process data in a JavaScript sandbox, draw charts, convert currencies, check the weather, convert time zones and generate images. See [AI tools](#ai-tools) below.
 - **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter (and GitHub, to check for new versions; you can turn that off in the tray menu). The currency and weather tools also send just a currency code or a place name to [NBP](https://api.nbp.pl) or [Open-Meteo](https://open-meteo.com).
+
+## AI tools
+
+The answering model decides on its own when to use a tool. Each tool it used appears above the answer; click it to see what went in and what came back. Tools are switched on by default and can be turned off one by one in the tray menu.
+
+| Tool | What it's for | Try asking | Runs where / what leaves your computer | Switch |
+|---|---|---|---|---|
+| Web search (`openrouter:web_search`) | Recent events, prices, schedules; sources listed under the answer | "Who won yesterday's match?" | OpenRouter (the search query) | **Szukaj w internecie** |
+| Calculations (`run_javascript`) | Exact arithmetic, percentages, statistics, date differences, counting, sorting, processing pasted data (CSV, tables, JSON, text) | "Sum the second column and give the average" + a pasted table | Locally, in [QuickJS](https://github.com/vercel-labs/quickjs-wasi) (WebAssembly) on a worker thread: no network, files or timers, 64 MB and 5 s per run. Nothing is sent | **Narzędzia AI → Obliczenia i analiza danych (JavaScript)** |
+| Charts (`vega-lite` blocks) | A bar, line or pie chart in the answer when it helps, or when you ask for one | "Make a chart of these sales by month" | Locally, drawn with [Vega-Lite](https://vega.github.io/vega-lite/); data only from the answer, nothing is loaded from the network | **Narzędzia AI → Wykresy** |
+| Exchange rates (`get_exchange_rate`) | Currency conversion at the National Bank of Poland's average rates, today or on a past date | "How much is 250 euro in złoty?" | [NBP API](https://api.nbp.pl) (only the currency code and date) | **Narzędzia AI → Kursy walut (NBP)** |
+| Weather (`get_weather`) | Current weather and a forecast of up to 7 days | "Will it rain in Kraków tomorrow?" | [Open-Meteo](https://open-meteo.com) (only the place name, then its coordinates); free for non-commercial use | **Narzędzia AI → Pogoda (Open-Meteo)** |
+| Time zones (`convert_time`) | The time elsewhere, meeting times across zones, with daylight saving time handled exactly | "What time is 3 pm Warsaw in New York?" | Locally (the system's time zone database). Nothing is sent | **Narzędzia AI → Strefy czasowe** |
+| Images (`generate_image`) | Creating a picture, or editing an attached or previously generated one | "Draw a logo with a red fox" | OpenRouter, with the model from **Model obrazów** | none: used only when you ask for a picture |
+
+The model has no tool that reads your clipboard, screen or files by itself: pictures reach it only when you attach them. Planned tools and the ones we decided against, with the reasons, are in [docs/PLAN.md](docs/PLAN.md) (M7).
+
+**Adding a tool:** write it in `src/main/tools/` as a `LocalTool` (see `types.ts`), register it in `src/main/tools/index.ts` (the list, `TOOL_MENU` for the tray switch, and `INSTRUCTIONS` for the system prompt), add a row to the table above, and cover it in `scripts/test-tools.ts` with canned responses instead of the network.
 
 ## Install
 
