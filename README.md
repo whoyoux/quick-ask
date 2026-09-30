@@ -14,7 +14,7 @@ Hold a key, ask out loud, let go, and the answer appears in a small overlay on t
 Download the installer for your system from [Releases](https://github.com/whoyoux/quick-ask/releases). The builds aren't code-signed yet, so the first launch needs one extra step:
 
 - **Windows** (`…-win-x64-setup.exe`): if SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
-- **macOS** (`…-mac-arm64.dmg` for Apple Silicon, `…-mac-x64.dmg` for Intel): macOS reports an unsigned download as "damaged" or unverified. After dragging the app to Applications, run `xattr -dr com.apple.quarantine "/Applications/Quick Ask.app"` once.
+- **macOS** (`…-mac-arm64.dmg` for Apple Silicon, `…-mac-x64.dmg` for Intel): the app isn't notarized, so macOS refuses to open it the first time. After dragging it to Applications and trying to open it once, go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run `xattr -dr com.apple.quarantine "/Applications/Quick Ask.app"` once.
 - **Linux** (x64, glibc 2.34+, e.g. Ubuntu 22.04, Debian 12, Fedora 35 or newer): on Debian and Ubuntu install the `.deb` with `sudo apt install ./quick-ask-*.deb`; it pulls in everything it needs. Elsewhere, make the `.AppImage` executable and run it. It needs FUSE 2 (`libfuse2`) and the X11 libraries push-to-talk links against: libX11, libXrandr, libXtst and libXt (`libx11-6 libxrandr2 libxtst6 libxt6` on Debian, `libX11 libXrandr libXtst libXt` on Fedora, `libx11 libxrandr libxtst libxt` on Arch). Most desktops already have them.
 
 ## How it works
@@ -42,6 +42,8 @@ On first launch a window asks for your OpenRouter API key. Other scripts:
 |---|---|
 | `npm run typecheck` | Type-checks the main process and the renderer |
 | `npm run build` | Bundles main, preload and renderer into `out/` |
+| `npm run test:history` | Tests the conversation history database |
+| `npm run test:smoke` | Starts the app packaged by `npx electron-builder --dir` and checks that it comes up |
 | `npm run icons` | Regenerates every icon from the vector mark in `scripts/make-icons.ts` |
 | `npm run dist` | Builds installers into `release/` |
 
@@ -54,7 +56,7 @@ Set `QUICK_ASK_DEBUG=1` to log push-to-talk and overlay events to the console.
 
 ### Releases
 
-CI type-checks and builds every push to `main` and every pull request. To publish a version, bump `version` in `package.json`, then tag and push:
+CI type-checks, tests, packages and starts the app on Windows, macOS and Linux for every push to `main` and every pull request; Dependabot opens weekly pull requests for dependency updates. To publish a version, bump `version` in `package.json`, then tag and push:
 
 ```bash
 git tag v0.2.0

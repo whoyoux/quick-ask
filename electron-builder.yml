@@ -20,13 +20,29 @@ files:
 npmRebuild: false
 asarUnpack:
   - node_modules/uiohook-napi/**
+# Electron's recommended hardening: the packaged binary can't be turned into a plain Node
+# runtime or a debug target, and it runs only the app.asar it shipped with (checked against a
+# hash on macOS and Windows). `npm run test:smoke` starts the packaged app to catch breakage.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # Flipping fuses changes the Electron binary; re-sign it ad hoc so Apple Silicon still runs it.
+  resetAdHocDarwinSignature: true
 
 mac:
   target:
     - target: dmg
       arch: [arm64, x64]
   category: public.app-category.productivity
-  hardenedRuntime: true
+  # Ad-hoc signature until PLAN T5.5: without any signature macOS calls the download "damaged";
+  # with it, it's an app from an unidentified developer. A Developer ID signature replaces
+  # this and needs hardenedRuntime: true for notarization (ad hoc, the hardened runtime's
+  # library validation would refuse to load Electron's own frameworks).
+  identity: '-'
+  hardenedRuntime: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -46,6 +62,9 @@ linux:
     - AppImage
     - deb
   category: Utility
+  # Names the .desktop file after package.json's desktopName, which Electron reports as the
+  # window's WM_CLASS / Wayland app_id, so docks and task switchers show the app's icon.
+  syncDesktopName: true
   # Required for .deb; package.json's author has no email.
   maintainer: whoyoux <48690153+whoyoux@users.noreply.github.com>
 deb:

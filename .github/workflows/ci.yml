@@ -18,9 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -31,3 +31,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:history
+      # Packages the app without installers and starts it, which catches what only breaks
+      # once packaged: files left out of app.asar, the native key hook, fuses, signatures.
+      - name: Package
+        run: npx electron-builder --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # macOS signs ad hoc (no secrets involved), so pull requests may sign too.
+          CSC_FOR_PULL_REQUEST: 'true'
+      - run: npm run test:smoke

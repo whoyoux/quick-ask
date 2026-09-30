@@ -3,6 +3,7 @@
   "productName": "Quick Ask",
   "version": "0.1.0",
   "description": "Hold a key, ask out loud, get an AI answer in a small overlay.",
+  "desktopName": "quick-ask.desktop",
   "main": "./out/main/index.js",
   "author": "whoyoux",
   "license": "MIT",
@@ -19,6 +20,7 @@
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/make-icons.ts",
     "db:generate": "drizzle-kit generate",
     "test:history": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-history.ts",
+    "test:smoke": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/smoke-test.ts",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {

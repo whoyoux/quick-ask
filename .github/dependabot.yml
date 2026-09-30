@@ -1,0 +1,22 @@
+# Weekly pull requests for dependency updates; CI checks each one, including the packaged app.
+# Electron gets its own pull requests: a new major changes the bundled Chromium and Node.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      electron:
+        patterns: [electron]
+      dependencies:
+        patterns: ['*']
+        exclude-patterns: [electron]
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

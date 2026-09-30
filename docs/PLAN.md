@@ -77,8 +77,9 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T5.1 macOS: test `type: 'panel'` nad aplikacjami pełnoekranowymi, uprawnienia mikrofonu i Accessibility na podpisanej apce
 - [ ] T5.2 Windows: test na skalowaniu 125–200% i z aplikacjami uruchomionymi jako administrator
 - [ ] T5.3 Linux: test na X11, instrukcja podpięcia `quick-ask --toggle` pod skrót systemowy na Waylandzie
-- [x] T5.4 GitHub Actions: `ci.yml` (typecheck + build na każdy push) i `release.yml` (instalatory Windows, macOS arm64/x64, Linux po tagu `v*` jako szkic release'u); paczki macOS i Linux jeszcze niesprawdzone
-- [ ] T5.5 Podpisywanie: notaryzacja Apple (Developer ID), podpis Windows (Azure Trusted Signing)
+- [x] T5.4 GitHub Actions: `ci.yml` (typecheck + build na każdy push) i `release.yml` (instalatory Windows, macOS arm64/x64, Linux po tagu `v*` jako szkic release'u); próbny build na wszystkich trzech systemach przechodzi
+- [x] T5.4a Gotowość do wydania: CI pakuje i uruchamia aplikację na Windows, macOS i Linux (`--smoke-test`, `npm run test:smoke`), release sprawdza paczki przed publikacją; Electron fuses; podpis ad-hoc na macOS; `desktopName` na Linuksie; Dependabot
+- [ ] T5.5 Podpisywanie: notaryzacja Apple (Developer ID, potem `hardenedRuntime: true` zamiast podpisu ad-hoc), podpis Windows (SignPath Foundation, Certum albo Azure Artifact Signing dla firmy)
 - [ ] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases)
 
 ### M6: Po MVP

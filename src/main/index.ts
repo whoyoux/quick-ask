@@ -13,6 +13,7 @@ import { PTT_KEYS, PushToTalk } from './push-to-talk'
 import { getApiKey } from './secrets'
 import { settings } from './settings'
 import { openSettingsWindow } from './settings-window'
+import { runSmokeTest, useSmokeTestProfile } from './smoke-test'
 import { TrayMenu } from './tray'
 
 const isMac = process.platform === 'darwin'
@@ -212,12 +213,24 @@ function main(): void {
 
 // The overlay shows pictures through qa-image:; schemes must be registered before the app is ready.
 registerImageScheme()
+// Quick Ask lives in the tray: closing the settings window must not quit the app.
+app.on('window-all-closed', () => {})
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--smoke-test')) {
+  useSmokeTestProfile()
+  void app
+    .whenReady()
+    .then(runSmokeTest)
+    .then(
+      () => app.exit(0),
+      (error: unknown) => {
+        console.error('[quick-ask] smoke test failed:', error)
+        app.exit(1)
+      }
+    )
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  // Quick Ask lives in the tray: closing the settings window must not quit the app.
-  app.on('window-all-closed', () => {})
   void app.whenReady().then(() => {
     if (isMac) app.dock?.hide()
     if (process.platform === 'win32') app.setAppUserModelId('com.whoyoux.quickask')

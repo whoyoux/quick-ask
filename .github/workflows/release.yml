@@ -54,8 +54,12 @@ jobs:
       - name: Package
         run: npx electron-builder --${{ matrix.target }} --publish never
         env:
-          # Unsigned until PLAN T5.5: don't let electron-builder pick up any keychain identity.
+          # Only ad-hoc signed on macOS until PLAN T5.5: don't let electron-builder pick up any
+          # keychain identity.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # Starts the packaged app before anything is published.
+      - run: npm run test:smoke
 
       - uses: actions/upload-artifact@v7
         with:
