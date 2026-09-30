@@ -66,6 +66,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T4.3 Logowanie „Połącz z OpenRouter” (OAuth PKCE z callbackiem na localhost) zamiast wklejania klucza
 - [ ] T4.4 Onboarding przy pierwszym uruchomieniu: połączenie, test mikrofonu, uprawnienia
 - [ ] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera)
+- [ ] T4.8 Historia rozmów w SQLite (Drizzle ORM): zapis każdej rozmowy, okno „Historia rozmów” z wyszukiwaniem, powrót do rozmowy i kontynuacja, przełącznik „Zapisuj historię”
 - [ ] T4.6 „Inny model…”: okno z wyszukiwarką po `GET /api/v1/models`
 - [ ] T4.7 Własny klawisz nagrywania (nagrywanie kombinacji w oknie ustawień)
 
@@ -81,6 +82,10 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T6.1 Wyszukiwanie w sieci (plugin web OpenRoutera) jako przełącznik w menu
 - [ ] T6.2 Pisanie pytania zamiast mówienia (pole tekstowe w panelu)
 - [ ] T6.3 Kontekst: zaznaczony tekst / schowek / zrzut ekranu jako załącznik do pytania
-- [ ] T6.4 Historia rozmów
 - [ ] T6.5 Tłumaczenie interfejsu (PL / EN)
 - [ ] T6.6 Czytanie odpowiedzi na głos (`/api/v1/audio/speech`)
+
+### M7: Narzędzia dla AI (po działającym MVP)
+- [ ] T7.1 Wykresy: model zwraca dane wykresu w bloku kodu (np. JSON dla Chart.js / Vega-Lite), a panel renderuje go jako interaktywny wykres (własny komponent Streamdown)
+- [ ] T7.2 Uruchamianie prostego kodu w sandboxie: JavaScript w QuickJS/WASM albo Python w Pyodide, lokalnie w izolowanym workerze, bez dostępu do sieci i plików; wynik wraca do modelu jako tool result
+- [ ] T7.3 Tool calling przez OpenRouter (`tools` w `/chat/completions`) jako wspólna podstawa dla T7.1 i T7.2
