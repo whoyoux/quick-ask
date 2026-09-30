@@ -44,7 +44,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T2.1 Transkrypcja (`/audio/transcriptions`, podpowiedź języka)
 - [x] T2.2 Czat ze streamingiem (SSE), prompt systemowy z datą, godziną i długością odpowiedzi
 - [x] T2.3 Filtr ciszy i halucynacji Whispera („Napisy stworzone przez społeczność Amara.org” itp.)
-- [x] T2.4 Czytelne błędy: zły klucz (401), brak środków (402), limit (429), brak sieci, niedostępny model
+- [x] T2.4 Czytelne błędy: zły klucz (401), brak środków (402), limit (429), brak sieci, niedostępny model, zerwane połączenie; limity czasu transkrypcji (45 s) i ciszy w streamie (30 s)
 - [x] T2.5 Nowa rozmowa przerywa zapytania poprzedniej (AbortController); zamknięcie panelu nie przerywa, więc „Wróć do ostatniej rozmowy” pokaże całą odpowiedź
 - [ ] T2.6 Test end-to-end z prawdziwym kluczem na Windows (nagranie → transkrypcja → odpowiedź)
 - [x] T2.7 Nagrywanie do WAV 16 kHz przez AudioWorklet (zgodność z każdym modelem transkrypcji)
@@ -64,7 +64,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa
 - [x] T4.2 Okno klucza API z testem klucza (`GET /api/v1/key`) i prośbą o Accessibility na macOS
 - [ ] T4.4 Onboarding przy pierwszym uruchomieniu: klucz API, test mikrofonu, uprawnienia
-- [ ] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera)
+- [x] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera); odłączony mikrofon → domyślny systemowy
 - [ ] T4.8 Historia rozmów w SQLite (Drizzle ORM): zapis każdej rozmowy, okno „Historia rozmów” z wyszukiwaniem, powrót do rozmowy i kontynuacja, przełącznik „Zapisuj historię”
 - [ ] T4.6 „Inny model…”: okno z wyszukiwarką po `GET /api/v1/models`
 - [ ] T4.7 Własny klawisz nagrywania (nagrywanie kombinacji w oknie ustawień)
@@ -73,7 +73,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T5.1 macOS: test `type: 'panel'` nad aplikacjami pełnoekranowymi, uprawnienia mikrofonu i Accessibility na podpisanej apce
 - [ ] T5.2 Windows: test na skalowaniu 125–200% i z aplikacjami uruchomionymi jako administrator
 - [ ] T5.3 Linux: test na X11, instrukcja podpięcia `quick-ask --toggle` pod skrót systemowy na Waylandzie
-- [ ] T5.4 GitHub Actions: build na 3 systemy, artefakty w Releases (`electron-builder.yml` już jest)
+- [x] T5.4 GitHub Actions: `ci.yml` (typecheck + build na każdy push) i `release.yml` (instalatory Windows, macOS arm64/x64, Linux po tagu `v*` jako szkic release'u); paczki macOS i Linux jeszcze niesprawdzone
 - [ ] T5.5 Podpisywanie: notaryzacja Apple (Developer ID), podpis Windows (Azure Trusted Signing)
 - [ ] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases)
 
