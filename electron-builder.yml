@@ -20,6 +20,8 @@ files:
 npmRebuild: false
 asarUnpack:
   - node_modules/uiohook-napi/**
+  # The JavaScript sandbox's worker thread loads its script from disk (src/main/tools/javascript.ts).
+  - out/main/javascript.worker-*.js
 # Where electron-updater looks for new versions (app-update.yml inside the app). Builds also write
 # latest*.yml next to the installers; the Release workflow attaches them to the GitHub Release.
 publish:

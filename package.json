@@ -19,6 +19,7 @@
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/make-icons.ts",
     "db:generate": "drizzle-kit generate",
     "test:history": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-history.ts",
+    "test:tools": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-tools.ts",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
@@ -38,12 +39,17 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "quickjs-wasi": "^3.6.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "rehype-harden": "^1.1.8",
     "streamdown": "^2.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
+    "vega": "^6.4.0",
+    "vega-embed": "^7.3.0",
+    "vega-interpreter": "^2.3.2",
+    "vega-lite": "^6.4.3",
     "vite": "^7.3.6"
   }
 }

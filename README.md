@@ -7,7 +7,8 @@ Hold a key, ask out loud, let go, and the answer appears in a chat window; while
 - **Push-to-talk**: hold right Ctrl (right Option on macOS) while you speak, release to send.
 - **Follow-ups**: while the chat window is open, hold the key again (or type) to continue the same conversation. Close it and the next question starts fresh.
 - **Any model**: bring your own [OpenRouter](https://openrouter.ai) key and pick the answering and transcription models from the tray menu.
-- **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter (and GitHub, to check for new versions; you can turn that off in the tray menu).
+- **Tools**: the model can run JavaScript in a sandbox for exact math and data work (paste a table and ask), draw charts, convert currencies at the National Bank of Poland's rates, check the weather and convert between time zones. Each one can be switched off under **Narzędzia AI** in the tray.
+- **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter (and GitHub, to check for new versions; you can turn that off in the tray menu). The currency and weather tools also send just a currency code or a place name to [NBP](https://api.nbp.pl) or [Open-Meteo](https://open-meteo.com).
 
 ## Install
 
@@ -33,6 +34,8 @@ hold key ─▶ record (webm/opus) ─▶ OpenRouter /audio/transcriptions ─�
                     chat window ◀── streamed answer ◀── OpenRouter /chat/completions
 ```
 
+When the model calls a tool, the app runs it and sends the result back until the model has its answer: JavaScript runs in [QuickJS](https://github.com/vercel-labs/quickjs-wasi) compiled to WebAssembly, on a worker thread, with no network or file access and limits on memory and time. Charts are ` ```vega-lite ` blocks in the answer, drawn with [Vega-Lite](https://vega.github.io/vega-lite/) without loading anything from the network.
+
 Electron's built-in `globalShortcut` only reports key presses, so push-to-talk listens to raw key down/up events through [`uiohook-napi`](https://github.com/SnosMe/uiohook-napi). Answers are rendered while streaming with [Streamdown](https://streamdown.ai).
 
 ## Development
@@ -50,6 +53,8 @@ On first launch a window asks for your OpenRouter API key. Other scripts:
 |---|---|
 | `npm run typecheck` | Type-checks the main process and the renderer |
 | `npm run build` | Bundles main, preload and renderer into `out/` |
+| `npm run test:history` | Tests the conversation history database |
+| `npm run test:tools` | Tests the model's tools and the tool-call stream, without network |
 | `npm run icons` | Regenerates every icon from the vector mark in `scripts/make-icons.ts` |
 | `npm run dist` | Builds installers into `release/` |
 

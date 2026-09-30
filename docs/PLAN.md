@@ -21,6 +21,7 @@ odpowiedź z modelu AI. Ustawienia są w menu ikony w zasobniku systemowym (tray
 | Bezpieczeństwo UI | renderer z `sandbox` + `contextIsolation`; w odpowiedziach bez surowego HTML i bez obrazków, linki tylko http(s)/mailto i zawsze w przeglądarce |
 | Aktualizacje | `electron-updater` z GitHub Releases (tylko opublikowane wydania, szkice są pomijane); na macOS samo powiadomienie, bo Squirrel.Mac wymaga podpisu |
 | Wygląd | grafitowe tło (#1E1E22) + czerwony akcent (#E9383F); ikona: „Q” jako dymek z paskami głosu |
+| Narzędzia AI | kilka małych, pewnych narzędzi zamiast katalogu: sandbox JS (obliczenia i dane), wykresy, kursy NBP, pogoda, strefy czasowe; każde można wyłączyć. Niczego, co czyta prywatne dane (schowek, ekran), model nie wywołuje sam |
 
 ## Zadania
 
@@ -91,7 +92,15 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T6.5 Tłumaczenie interfejsu (PL / EN)
 - [ ] T6.6 Czytanie odpowiedzi na głos (`/api/v1/audio/speech`)
 
-### M7: Narzędzia dla AI (po działającym MVP)
-- [ ] T7.1 Wykresy: model zwraca dane wykresu w bloku kodu (np. JSON dla Chart.js / Vega-Lite), a panel renderuje go jako interaktywny wykres (własny komponent Streamdown)
-- [ ] T7.2 Uruchamianie prostego kodu w sandboxie: JavaScript w QuickJS/WASM albo Python w Pyodide, lokalnie w izolowanym workerze, bez dostępu do sieci i plików; wynik wraca do modelu jako tool result
-- [ ] T7.3 Tool calling przez OpenRouter (`tools` w `/chat/completions`) jako wspólna podstawa dla T7.1 i T7.2
+### M7: Narzędzia dla AI
+- [x] T7.3 Pętla tool calling: wynik narzędzia wraca do modelu (`role: tool` z `tool_call_id`), model może wołać kolejne; najwyżej 4 rundy, potem `tool_choice: none`. `reasoning_details` wracają bez zmian (Gemini 3 bez sygnatur myśli odrzuca wynik narzędzia, Claude bez bloków thinking). `generate_image` nadal kończy odpowiedź. Użyte narzędzia nad odpowiedzią (rozwijane: wejście i wynik), zapisane w historii (kolumna `tools`); menu „Narzędzia AI” z przełącznikiem dla każdego; testy: `npm run test:tools`
+- [x] T7.2 Sandbox JavaScript (`run_javascript`): [quickjs-wasi](https://github.com/vercel-labs/quickjs-wasi) (QuickJS-NG w WASM) w `worker_thread`; bez sieci, plików, timerów i `require`; 64 MB pamięci, 5 s, świeża maszyna przy każdym uruchomieniu; zmienna `message` z całym pytaniem, więc wklejonych danych model nie przepisuje do kodu. Worker zatrzymywany po 2 min bezczynności, zabijany, gdy nie odpowiada
+- [x] T7.1 Wykresy: blok ` ```vega-lite ` w odpowiedzi rysowany przez Vega-Lite (ładowany leniwie). Wyrażenia przez `vega-interpreter` (CSP bez `eval`), loader bez sieci: tylko dane z odpowiedzi, bez obrazków i linków. Paleta 8 kolorów sprawdzona pod daltonizm na tle #1E1E22
+- [x] T7.4 Kursy walut (`get_exchange_rate`): średnie kursy NBP, tabela A, potem B; kurs z dnia albo ostatni przed nim; inne pary przez PLN
+- [x] T7.5 Pogoda (`get_weather`): Open-Meteo, geokodowanie i prognoza do 7 dni; Open-Meteo w źródłach pod odpowiedzią (dane CC BY 4.0, darmowe do użytku niekomercyjnego)
+- [x] T7.6 Strefy czasowe (`convert_time`): `Intl` z bazą tz, zmiana czasu liczona dokładnie
+- [ ] T7.7 Tekst ze schowka jako załącznik do pytania, na żądanie użytkownika (przycisk / pozycja w menu), a nie jako narzędzie modelu: schowek w połączeniu z treściami z sieci pozwoliłby prompt injection wynieść dane
+- [ ] T7.8 Pliki CSV / XLSX przeciągnięte do panelu jako dane dla sandboxa (papaparse; SheetJS z cdn.sheetjs.com, bo `xlsx` z npm jest porzucony i ma CVE)
+- [ ] T7.9 `openrouter:web_fetch` dla linków podanych w pytaniu, z `allowed_domains` ograniczonym do ich domen
+- [ ] T7.10 Sprawdzić worker i `quickjs.wasm` w spakowanej aplikacji (app.asar) na Windows, macOS i Linuksie
+- Odrzucone: mathjs (sandbox JS to pokrywa, a w 2026 mathjs miał podatności z wykonaniem kodu), `node:vm` / vm2 / isolated-vm (to nie sandbox, ucieczki, moduł natywny), Pyodide (13 MB + pandas, ok. 3 s startu, kod Pythona ma dostęp do procesu przez `js`), osobne narzędzia do tłumaczenia, słownika i Wikipedii (model i wyszukiwarka wystarczą), `openrouter:datetime` (data jest w prompcie), klient MCP (duża powierzchnia ataku)

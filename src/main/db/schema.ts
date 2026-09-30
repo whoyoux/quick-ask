@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import type { Source } from '../../shared/types'
+import type { Source, ToolUse } from '../../shared/types'
 import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 // Timestamps are epoch milliseconds. After editing this file run `npm run db:generate`.
@@ -43,6 +43,8 @@ export const turns = sqliteTable(
     /** File names in the images folder, as JSON. */
     attachments: text({ mode: 'json' }).$type<string[]>(),
     images: text({ mode: 'json' }).$type<string[]>(),
+    /** Tools the model ran for the answer, as JSON. */
+    tools: text({ mode: 'json' }).$type<ToolUse[]>(),
     createdAt: integer('created_at').notNull()
   },
   (t) => [

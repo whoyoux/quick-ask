@@ -148,6 +148,8 @@ export function titleFrom(question: string): string {
 /** One line of plain text from a markdown answer. */
 export function toSnippet(markdown: string): string {
   const text = markdown
+    // Code blocks (and charts, which are JSON in a code block) say nothing in one line.
+    .replace(/```[\s\S]*?(?:```|$)/g, ' ')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^\s*(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
     .replace(/[*`~]+/g, '')
