@@ -3,17 +3,26 @@ productName: Quick Ask
 directories:
   buildResources: build
   output: release/${version}
+# No spaces: GitHub turns them into dots in release asset names.
+artifactName: ${name}-${version}-${os}-${arch}.${ext}
 files:
   - out/**
   - resources/**
   - package.json
+  # uiohook-napi ships its C sources and a prebuild for every OS; keep only the one we package
+  # for. ${platform} is the build machine's OS, so build each OS on its own machine (as CI does).
+  # Inside node_modules electron-builder applies only exclusions, hence the negated extglob.
+  - "!node_modules/uiohook-napi/{libuiohook,src}{,/**}"
+  - "!node_modules/uiohook-napi/prebuilds/!(${platform}-${arch}){,/**}"
 # uiohook-napi ships N-API prebuilds that work on every Electron version; nothing to compile.
 npmRebuild: false
 asarUnpack:
   - node_modules/uiohook-napi/**
 
 mac:
-  target: dmg
+  target:
+    - target: dmg
+      arch: [arm64, x64]
   category: public.app-category.productivity
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
@@ -28,9 +37,28 @@ win:
 nsis:
   oneClick: true
   perMachine: false
+  artifactName: ${name}-${version}-win-${arch}-setup.${ext}
 
 linux:
   target:
     - AppImage
     - deb
   category: Utility
+  # Required for .deb; package.json's author has no email.
+  maintainer: whoyoux <48690153+whoyoux@users.noreply.github.com>
+deb:
+  # Setting depends replaces electron-builder's defaults, so the first nine repeat them.
+  # uiohook-napi also links libX11, libXrandr, libXtst and libXt (libxtst6 is already a default).
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libx11-6
+    - libxrandr2
+    - libxt6
