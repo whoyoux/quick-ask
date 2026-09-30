@@ -9,6 +9,8 @@ files:
   - out/**
   - resources/**
   - package.json
+  # SQL migrations, applied at startup from inside app.asar (the snapshots are only for drizzle-kit).
+  - drizzle/**/migration.sql
   # uiohook-napi ships its C sources and a prebuild for every OS; keep only the one we package
   # for. ${platform} is the build machine's OS, so build each OS on its own machine (as CI does).
   # Inside node_modules electron-builder applies only exclusions, hence the negated extglob.

@@ -99,3 +99,31 @@ export interface SettingsApi {
   openLink(link: ExternalLink): void
   close(): void
 }
+
+export interface ConversationSummary {
+  id: string
+  title: string
+  /** Epoch ms of the last saved question. */
+  updatedAt: number
+  /** The first answer as one line of plain text. */
+  snippet: string
+}
+
+export interface HistoryList {
+  /** False when the history database could not be opened. */
+  available: boolean
+  /** The tray's "Zapisuj historię rozmów" switch. */
+  saving: boolean
+  conversations: ConversationSummary[]
+}
+
+export interface HistoryApi {
+  list(query: string): Promise<HistoryList>
+  /** Shows the conversation in the answer panel, where it can be continued. False if it's gone. */
+  open(id: string): Promise<boolean>
+  remove(id: string): Promise<void>
+  clear(): Promise<void>
+  /** Returns a function that removes the listener. */
+  onChange(listener: () => void): () => void
+  close(): void
+}

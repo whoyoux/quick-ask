@@ -1,6 +1,10 @@
 import { app, session, systemPreferences, type WebContents } from 'electron'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { SetupStatus } from '../shared/types'
 import { Controller } from './controller'
+import { HistoryStore } from './db/history'
+import { notifyHistoryWindow, openHistoryWindow } from './history-window'
 import { maskedKey, registerIpc } from './ipc'
 import { OverlayWindow } from './overlay-window'
 import { PTT_KEYS, PushToTalk } from './push-to-talk'
@@ -10,6 +14,19 @@ import { openSettingsWindow } from './settings-window'
 import { TrayMenu } from './tray'
 
 const isMac = process.platform === 'darwin'
+
+/** The conversation history; without it the app still answers questions, it just can't save them. */
+function openHistory(): HistoryStore | null {
+  try {
+    const dir = app.getPath('userData')
+    mkdirSync(dir, { recursive: true })
+    // Migrations ship next to package.json: the project root in dev, app.asar when packaged.
+    return new HistoryStore(join(dir, 'history.db'), join(app.getAppPath(), 'drizzle'))
+  } catch (error) {
+    console.error('[quick-ask] history database unavailable:', error)
+    return null
+  }
+}
 
 /**
  * Only the overlay gets permissions: the microphone (audio only) and writing to the clipboard,
@@ -38,18 +55,24 @@ function main(): void {
   let accessibilityPoll: NodeJS.Timeout | null = null
 
   const pttLabel = (): string => PTT_KEYS[settings.get().pttKey].label
+  const history = openHistory()
 
-  const controller = new Controller(overlay, {
-    onRecordingChange: (recording) => tray?.setRecording(recording),
-    onConversationChange: () => tray?.rebuild(),
-    openSettings: openSettingsWindow,
-    hint: (followUp) => {
-      const goal = followUp ? 'dopytać' : 'zadać pytanie'
-      return ptt.isRunning
-        ? `Przytrzymaj ${pttLabel()}, aby ${goal}`
-        : `Kliknij ikonę Quick Ask w zasobniku, aby ${goal}`
-    }
-  })
+  const controller = new Controller(
+    overlay,
+    {
+      onRecordingChange: (recording) => tray?.setRecording(recording),
+      onConversationChange: () => tray?.rebuild(),
+      onHistoryChange: notifyHistoryWindow,
+      openSettings: openSettingsWindow,
+      hint: (followUp) => {
+        const goal = followUp ? 'dopytać' : 'zadać pytanie'
+        return ptt.isRunning
+          ? `Przytrzymaj ${pttLabel()}, aby ${goal}`
+          : `Kliknij ikonę Quick Ask w zasobniku, aby ${goal}`
+      }
+    },
+    history
+  )
 
   const ptt = new PushToTalk({
     onPress: () => controller.keyPressed(),
@@ -95,6 +118,7 @@ function main(): void {
     {
       toggleHandsFree: () => controller.toggleHandsFree(),
       showLastConversation: () => controller.showLastConversation(),
+      openHistory: openHistoryWindow,
       openSettings: openSettingsWindow,
       requestAccessibility
     },
@@ -109,6 +133,7 @@ function main(): void {
   registerIpc({
     overlay,
     controller,
+    history,
     setupStatus,
     requestAccessibility,
     onKeyChanged: refresh,
@@ -124,6 +149,7 @@ function main(): void {
   settings.onChange((current) => {
     if (current.pttKey !== previous.pttKey) ptt.setKey(current.pttKey)
     if (previous.overlayPosition && !current.overlayPosition) overlay.resetPosition()
+    if (current.saveHistory !== previous.saveHistory) notifyHistoryWindow()
     previous = current
     refresh()
   })
@@ -138,7 +164,10 @@ function main(): void {
     overlay.webContents.once('did-finish-load', () => controller.toggleHandsFree())
   }
 
-  app.on('will-quit', () => ptt.stop())
+  app.on('will-quit', () => {
+    ptt.stop()
+    history?.close()
+  })
 
   if (!getApiKey()) openSettingsWindow()
 }

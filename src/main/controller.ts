@@ -1,5 +1,7 @@
 import { systemPreferences } from 'electron'
+import { randomUUID } from 'node:crypto'
 import type { OverlayView, RecordingOutcome, Turn } from '../shared/types'
+import type { HistoryStore, TurnRecord } from './db/history'
 import { debug } from './debug'
 import { modelName } from './models'
 import { OpenRouterError, streamChat, transcribe, type ChatMessage } from './openrouter'
@@ -25,9 +27,20 @@ const RENDER_INTERVAL_MS = 40
 
 type RecorderPhase = 'idle' | 'arming' | 'recording' | 'stopping'
 
+interface Conversation {
+  /** Its row in the history database. */
+  id: string
+  /** Cancels this conversation's requests once another one replaces it. */
+  requests: AbortController
+  /** Saved turns keep the order the questions were asked in, even if answers finish out of order. */
+  nextPosition: number
+}
+
 export interface ControllerHooks {
   onRecordingChange(recording: boolean): void
   onConversationChange(): void
+  /** A turn was saved to the history database. */
+  onHistoryChange(): void
   openSettings(): void
   /** Footer hint, e.g. "Przytrzymaj prawy Ctrl, aby dopytać". */
   hint(followUp: boolean): string
@@ -44,6 +57,10 @@ function micPermissionGranted(): boolean {
   return process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('microphone') === 'granted'
 }
 
+function roundMs(ms: number | null): number | null {
+  return ms === null ? null : Math.round(ms)
+}
+
 /**
  * Owns the conversation and drives the overlay:
  * press → record → transcribe → stream the answer.
@@ -51,6 +68,7 @@ function micPermissionGranted(): boolean {
  * Thread rule: a question asked while the answer panel is open continues that conversation;
  * once the panel is closed, the next question starts a new one. The panel never closes on its
  * own: only its close button (or the tray) hides it, and the app keeps running in the tray.
+ * Each finished turn is saved to the history, from which a conversation can be reopened.
  */
 export class Controller {
   private readonly view: OverlayView = {
@@ -67,17 +85,19 @@ export class Controller {
   private stopTimer: NodeJS.Timeout | null = null
   private noticeTimer: NodeJS.Timeout | null = null
   private renderTimer: NodeJS.Timeout | null = null
-  private conversation: AbortController | null = null
+  private conversation: Conversation | null = null
   /**
    * The conversation a fresh question replaced, kept until that question turns out to be real:
    * an accidental hold that transcribes to nothing brings it back instead of wiping it.
    */
-  private displaced: { controller: AbortController | null; turns: Turn[] } | null = null
+  private displaced: { conversation: Conversation | null; turns: Turn[] } | null = null
   private nextTurnId = 1
 
   constructor(
     private readonly overlay: OverlayWindow,
-    private readonly hooks: ControllerHooks
+    private readonly hooks: ControllerHooks,
+    /** null when the database could not be opened; questions still work, nothing is saved. */
+    private readonly history: HistoryStore | null
   ) {
     overlay.onLoad = () => this.pushView()
     overlay.onRendererLost = () => this.recorderLost('Nagrywanie przerwane: okno Quick Ask uległo awarii.')
@@ -162,7 +182,7 @@ export class Controller {
 
   /** Clears the thread but keeps the panel open for the next question. */
   newConversation(): void {
-    this.conversation?.abort()
+    this.conversation?.requests.abort()
     this.conversation = null
     this.dropDisplaced()
     this.view.turns = []
@@ -177,6 +197,46 @@ export class Controller {
     this.view.notice = null
     this.pushView()
     this.overlay.show()
+  }
+
+  /** Shows a saved conversation in the panel; the next question continues it. */
+  openConversation(id: string): boolean {
+    const saved = this.history?.turns(id) ?? []
+    if (saved.length === 0) return false
+    this.cancelRecording()
+    this.conversation?.requests.abort()
+    this.dropDisplaced()
+    this.conversation = { id, requests: new AbortController(), nextPosition: saved[saved.length - 1].position + 1 }
+    this.view.turns = saved.map(
+      (t): Turn => ({
+        id: this.nextTurnId++,
+        question: t.question,
+        answer: t.answer,
+        status: t.status,
+        error: t.error,
+        timing: {
+          transcriptionModel: modelName(t.transcriptionModel),
+          transcriptionMs: t.transcriptionMs,
+          chatModel: modelName(t.chatModel),
+          firstTokenMs: t.firstTokenMs
+        }
+      })
+    )
+    this.clearNoticeTimer()
+    this.view.mode = 'panel'
+    this.view.notice = null
+    this.pushView()
+    this.overlay.show()
+    this.hooks.onConversationChange()
+    return true
+  }
+
+  /** A deleted conversation also leaves the panel; `null` means the whole history was deleted. */
+  conversationDeleted(id: string | null): void {
+    const matches = (c: Conversation | null | undefined): boolean => Boolean(c) && (id === null || id === c?.id)
+    // One set aside by a question still being transcribed must not come back either.
+    if (matches(this.displaced?.conversation)) this.dropDisplaced()
+    if (matches(this.conversation)) this.newConversation()
   }
 
   /** Re-send the view, e.g. after the hint changed with the settings. */
@@ -299,11 +359,14 @@ export class Controller {
     if (!continuing || !this.conversation) {
       // The previous conversation keeps going in the background until this question is real.
       this.dropDisplaced()
-      this.displaced = { controller: this.conversation, turns: this.view.turns }
-      this.conversation = new AbortController()
+      this.displaced = { conversation: this.conversation, turns: this.view.turns }
+      this.conversation = { id: randomUUID(), requests: new AbortController(), nextPosition: 0 }
       this.view.turns = []
     }
-    const { signal } = this.conversation
+    const conversation = this.conversation
+    const { signal } = conversation.requests
+    const position = conversation.nextPosition++
+    const askedAt = Date.now()
     const turn: Turn = {
       id: this.nextTurnId++,
       question: '',
@@ -381,19 +444,42 @@ export class Controller {
           : `Coś poszło nie tak: ${error instanceof Error ? error.message : String(error)}`
     }
     this.pushView()
+    this.save(conversation.id, {
+      position,
+      question: turn.question,
+      answer: turn.answer,
+      status: turn.status === 'done' ? 'done' : 'error',
+      error: turn.error,
+      transcriptionModel: current.transcriptionModel,
+      chatModel: current.chatModel,
+      transcriptionMs: roundMs(turn.timing.transcriptionMs),
+      firstTokenMs: roundMs(turn.timing.firstTokenMs),
+      createdAt: askedAt
+    })
+  }
+
+  /** Saves a finished turn. A failed transcription has no question and nothing worth keeping. */
+  private save(conversationId: string, record: TurnRecord): void {
+    if (!this.history || !settings.get().saveHistory || !record.question) return
+    try {
+      this.history.saveTurn(conversationId, record)
+      this.hooks.onHistoryChange()
+    } catch (error) {
+      console.error('[quick-ask] could not save the turn to history:', error)
+    }
   }
 
   /** A question transcribed fine, so the conversation it replaced is gone for good. */
   private dropDisplaced(): void {
-    this.displaced?.controller?.abort()
+    this.displaced?.conversation?.requests.abort()
     this.displaced = null
   }
 
   /** Brings back the replaced conversation when nothing is left of the new one. */
   private restoreDisplaced(): void {
     if (!this.displaced || this.view.turns.length > 0) return
-    this.conversation?.abort()
-    this.conversation = this.displaced.controller
+    this.conversation?.requests.abort()
+    this.conversation = this.displaced.conversation
     this.view.turns = this.displaced.turns
     this.displaced = null
   }

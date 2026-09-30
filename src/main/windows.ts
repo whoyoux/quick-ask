@@ -1,7 +1,7 @@
 import { app, shell, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 
-export type Page = 'overlay' | 'settings'
+export type Page = 'overlay' | 'settings' | 'history'
 
 export function preloadPath(page: Page): string {
   return join(__dirname, `../preload/${page}.js`)

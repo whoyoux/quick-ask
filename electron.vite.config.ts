@@ -11,8 +11,9 @@ const productionCsp: Plugin = {
   transformIndexHtml: (html) => html.replace("connect-src 'self' ws:", "connect-src 'self'")
 }
 
-// The renderer's libraries (React, Streamdown) live in devDependencies because Vite bundles
-// them; only native modules like uiohook-napi stay in dependencies and ship in node_modules.
+// Pure JS libraries (React and Streamdown in the renderers, Drizzle in the main process) live
+// in devDependencies because Vite bundles them; only native modules like uiohook-napi stay in
+// dependencies and ship in node_modules.
 export default defineConfig({
   main: {
     build: {
@@ -26,7 +27,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           overlay: resolve(__dirname, 'src/preload/overlay.ts'),
-          settings: resolve(__dirname, 'src/preload/settings.ts')
+          settings: resolve(__dirname, 'src/preload/settings.ts'),
+          history: resolve(__dirname, 'src/preload/history.ts')
         }
       }
     }
@@ -40,7 +42,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
-          settings: resolve(__dirname, 'src/renderer/settings.html')
+          settings: resolve(__dirname, 'src/renderer/settings.html'),
+          history: resolve(__dirname, 'src/renderer/history.html')
         }
       }
     }

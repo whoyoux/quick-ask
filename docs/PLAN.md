@@ -65,7 +65,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T4.2 Okno klucza API z testem klucza (`GET /api/v1/key`) i prośbą o Accessibility na macOS
 - [ ] T4.4 Onboarding przy pierwszym uruchomieniu: klucz API, test mikrofonu, uprawnienia
 - [x] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera); odłączony mikrofon → domyślny systemowy
-- [ ] T4.8 Historia rozmów w SQLite (Drizzle ORM): zapis każdej rozmowy, okno „Historia rozmów” z wyszukiwaniem, powrót do rozmowy i kontynuacja, przełącznik „Zapisuj historię”
+- [x] T4.8 Historia rozmów w SQLite (`node:sqlite` + Drizzle ORM, bez natywnych modułów): zapis każdej rozmowy, okno „Historia rozmów” z wyszukiwaniem, powrót do rozmowy i kontynuacja, przełącznik „Zapisuj historię”; testy: `npm run test:history`
 - [ ] T4.6 „Inny model…”: okno z wyszukiwarką po `GET /api/v1/models`
 - [ ] T4.7 Własny klawisz nagrywania (nagrywanie kombinacji w oknie ustawień)
 

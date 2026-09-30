@@ -94,6 +94,7 @@ export interface TrayState {
 export interface TrayActions {
   toggleHandsFree(): void
   showLastConversation(): void
+  openHistory(): void
   openSettings(): void
   requestAccessibility(): void
 }
@@ -158,6 +159,7 @@ export class TrayMenu {
         enabled: state.hasConversation,
         click: () => this.actions.showLastConversation()
       },
+      { label: 'Historia rozmów…', click: () => this.actions.openHistory() },
       { type: 'separator' },
       {
         label: 'Model odpowiedzi',
@@ -210,6 +212,12 @@ export class TrayMenu {
         : []),
       { type: 'separator' },
       { label: 'Klucz API OpenRouter…', click: () => this.actions.openSettings() },
+      {
+        label: 'Zapisuj historię rozmów',
+        type: 'checkbox',
+        checked: current.saveHistory,
+        click: (item) => settings.update({ saveHistory: item.checked })
+      },
       ...(process.platform === 'linux'
         ? []
         : [

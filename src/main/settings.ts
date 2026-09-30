@@ -24,6 +24,8 @@ export interface Settings {
   micDeviceId: string | null
   /** Name of the chosen microphone, so the tray can still name it while it is unplugged. */
   micLabel: string | null
+  /** Save finished questions and answers to the local history database. */
+  saveHistory: boolean
 }
 
 function defaults(): Settings {
@@ -37,7 +39,8 @@ function defaults(): Settings {
     pttKey: process.platform === 'darwin' ? 'alt-right' : 'ctrl-right',
     overlayPosition: null,
     micDeviceId: null,
-    micLabel: null
+    micLabel: null,
+    saveHistory: true
   }
 }
 
