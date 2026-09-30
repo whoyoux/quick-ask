@@ -66,8 +66,8 @@ export class OverlayWindow {
         autoplayPolicy: 'no-user-gesture-required'
       }
     })
-    this.win.setAlwaysOnTop(true, 'screen-saver')
     if (isMac) this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    this.keepOnTop()
     // 'will-move' only fires for moves the user makes, unlike 'moved' on macOS, which also
     // reports our own setBounds and moves caused by a display change.
     this.win.on('will-move', () => {
@@ -109,6 +109,7 @@ export class OverlayWindow {
     if (!this.visible) {
       this.place(this.placement.saved())
       this.win.showInactive()
+      this.keepOnTop()
       debug('overlay shown', this.win.getBounds())
     }
     captureWindow(this.win, 'overlay')
@@ -125,6 +126,16 @@ export class OverlayWindow {
     if (process.platform === 'darwin') app.focus({ steal: true })
     this.win.focus()
     this.win.webContents.send('overlay:focus-input')
+  }
+
+  /**
+   * Puts the pill above every other window, again on each show: Windows and Linux can drop
+   * "always on top" while the window is hidden, and another always-on-top window (or, on macOS,
+   * the workspace setting) may have claimed the top since the pill was last shown.
+   */
+  private keepOnTop(): void {
+    this.win.setAlwaysOnTop(true, 'screen-saver')
+    this.win.moveTop()
   }
 
   /** Back to the default spot, e.g. after "Przywróć położenie okna". */

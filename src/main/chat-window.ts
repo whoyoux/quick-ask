@@ -99,8 +99,22 @@ export class ChatWindow {
       app.dock?.setIcon(appIcon())
     }
     if (this.win.isMinimized()) this.win.restore()
-    else if (!this.win.isVisible()) this.win.showInactive()
-    else this.win.moveTop()
+    // Also brings an open window to the front on macOS, even while another app is active.
+    else this.win.showInactive()
+    if (!this.win.isFocused()) this.raise()
+  }
+
+  /**
+   * Lifts the window above the other apps' windows without activating it. Windows (focus-stealing
+   * prevention) and Linux window managers leave a window shown without focus, or raised by a
+   * background app, under the active window; a window that turns always-on-top goes above them,
+   * and when that ends it stays on top of the ordinary windows.
+   */
+  private raise(): void {
+    if (isMac) return
+    this.win.setAlwaysOnTop(true)
+    this.win.moveTop()
+    this.win.setAlwaysOnTop(false)
   }
 
   /** Brings the window up and makes it active, e.g. when the user opened it from the tray. */
