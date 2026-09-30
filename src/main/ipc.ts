@@ -92,6 +92,9 @@ export function registerIpc({
   ipcMain.on('overlay:copy', (event, text: unknown) => {
     if (fromOverlay(event) && typeof text === 'string') void clipboard.writeText(text)
   })
+  ipcMain.on('overlay:ask-text', (event, text: unknown) => {
+    if (fromOverlay(event) && typeof text === 'string') controller.askText(text)
+  })
   ipcMain.on('overlay:attach-clipboard', (event) => {
     if (fromOverlay(event)) void controller.attach((room) => importClipboardImages(room))
   })

@@ -148,6 +148,7 @@ function main(): void {
   tray = new TrayMenu(
     {
       toggleHandsFree: () => controller.toggleHandsFree(),
+      startTyping: () => controller.startTyping(),
       attachClipboard: () => void controller.attach((room) => importClipboardImages(room)),
       attachFiles: () => void controller.attach(() => pickImageFiles(MAX_ATTACHMENTS)),
       showLastConversation: () => controller.showLastConversation(),

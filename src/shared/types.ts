@@ -116,6 +116,9 @@ export interface OverlayApi {
   copy(text: string): void
   sendNow(): void
   cancelRecording(): void
+  askText(text: string): void
+  /** The tray's "Napisz pytanie…" asks the panel to focus its text box. */
+  onFocusInput(listener: () => void): () => void
   attachClipboard(): void
   attachFiles(): void
   attachDropped(files: DroppedFile[]): void

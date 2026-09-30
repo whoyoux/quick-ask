@@ -18,6 +18,8 @@ const api: OverlayApi = {
   copy: (text) => ipcRenderer.send('overlay:copy', text),
   sendNow: () => ipcRenderer.send('overlay:send-now'),
   cancelRecording: () => ipcRenderer.send('overlay:cancel-recording'),
+  askText: (text) => ipcRenderer.send('overlay:ask-text', text),
+  onFocusInput: (listener) => subscribe<void>('overlay:focus-input', () => listener()),
   attachClipboard: () => ipcRenderer.send('overlay:attach-clipboard'),
   attachFiles: () => ipcRenderer.send('overlay:attach-files'),
   attachDropped: (files) => ipcRenderer.send('overlay:attach-dropped', files),

@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import type { OverlayView, RecorderCommand } from '../shared/types'
 import { captureWindow, debug, debugEnabled } from './debug'
 import type { OverlayPosition } from './settings'
@@ -115,6 +115,15 @@ export class OverlayWindow {
 
   hide(): void {
     this.win.hide()
+  }
+
+  /** Makes the overlay the active window and puts the cursor in the panel's text box. */
+  focusInput(): void {
+    this.show()
+    // macOS won't activate a Dock-less app's window on its own.
+    if (process.platform === 'darwin') app.focus({ steal: true })
+    this.win.focus()
+    this.win.webContents.send('overlay:focus-input')
   }
 
   /** Back to the default spot, e.g. after "Przywróć położenie okna". */

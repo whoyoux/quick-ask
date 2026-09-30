@@ -37,6 +37,12 @@ const RENDER_INTERVAL_MS = 40
 
 type RecorderPhase = 'idle' | 'arming' | 'recording' | 'stopping'
 
+/** A spoken question (still to be transcribed) or a typed one. */
+type QuestionInput = { audio: Buffer; mimeType: string } | { text: string }
+
+/** Longer typed questions are cut; this is a quick-question box, not a document editor. */
+const MAX_TYPED_LENGTH = 8000
+
 const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']
 
 /** The chat model calls this to make a picture; the image model in the tray menu draws it. */
@@ -234,6 +240,26 @@ export class Controller {
     this.pushView()
   }
 
+  // Typing ---------------------------------------------------------------------------------
+
+  /** A question typed into the panel; follows the same thread rule as a spoken one. */
+  askText(raw: string): void {
+    const text = raw.trim().slice(0, MAX_TYPED_LENGTH)
+    if (!text) return
+    if (!getApiKey()) {
+      this.showNotice('Najpierw dodaj klucz API OpenRouter.')
+      this.hooks.openSettings()
+      return
+    }
+    void this.ask({ text }, this.overlay.visible && this.view.mode === 'panel')
+  }
+
+  /** Opens the panel with the cursor in the text box (tray: "Napisz pytanie…"). */
+  startTyping(): void {
+    this.showPanel()
+    this.overlay.focusInput()
+  }
+
   // Attachments ----------------------------------------------------------------------------
 
   /** Adds pictures for the next question and opens the panel to show them. */
@@ -380,7 +406,7 @@ export class Controller {
       this.showNotice('Nie usłyszałem pytania.')
       return
     }
-    void this.ask(Buffer.from(result.audio), result.mimeType, this.continuing)
+    void this.ask({ audio: Buffer.from(result.audio), mimeType: result.mimeType }, this.continuing)
   }
 
   private ready(): boolean {
@@ -466,7 +492,8 @@ export class Controller {
 
   // Asking ---------------------------------------------------------------------------------
 
-  private async ask(audio: Buffer, mimeType: string, continuing: boolean): Promise<void> {
+  private async ask(input: QuestionInput, continuing: boolean): Promise<void> {
+    const typed = 'text' in input
     const apiKey = getApiKey()
     if (!apiKey) return
     const current = settings.get()
@@ -488,10 +515,10 @@ export class Controller {
       id: this.nextTurnId++,
       question: '',
       answer: '',
-      status: 'transcribing',
+      status: typed ? 'answering' : 'transcribing',
       error: null,
       timing: {
-        transcriptionModel: modelName(current.transcriptionModel),
+        transcriptionModel: typed ? '' : modelName(current.transcriptionModel),
         transcriptionMs: null,
         chatModel: modelName(current.chatModel),
         firstTokenMs: null
@@ -511,21 +538,9 @@ export class Controller {
     this.hooks.onConversationChange()
 
     try {
-      const transcriptionStart = performance.now()
-      const transcription = await transcribe({
-        apiKey,
-        model: current.transcriptionModel,
-        audio,
-        format: audioFormat(mimeType),
-        language: current.language === 'auto' ? null : current.language,
-        signal
-      })
-      turn.timing.transcriptionMs = performance.now() - transcriptionStart
-      addUsage(turn, transcription.cost, transcription.tokens)
-      this.hooks.onSpend()
-      const question = transcription.text
+      const question = typed ? input.text : await this.transcribe(turn, input, apiKey, signal)
       if (signal.aborted) return
-      if (isLikelyHallucination(question)) {
+      if (!typed && isLikelyHallucination(question)) {
         this.view.turns = this.view.turns.filter((t) => t !== turn)
         this.restoreDisplaced()
         // An open panel stays open; only a fresh question falls back to the notice pill
@@ -589,7 +604,7 @@ export class Controller {
       answer: turn.answer,
       status: turn.status === 'done' ? 'done' : 'error',
       error: turn.error,
-      transcriptionModel: current.transcriptionModel,
+      transcriptionModel: typed ? '' : current.transcriptionModel,
       chatModel: current.chatModel,
       transcriptionMs: roundMs(turn.timing.transcriptionMs),
       firstTokenMs: roundMs(turn.timing.firstTokenMs),
@@ -612,6 +627,28 @@ export class Controller {
     } catch (error) {
       console.error('[quick-ask] could not save the turn to history:', error)
     }
+  }
+
+  private async transcribe(
+    turn: Turn,
+    recording: { audio: Buffer; mimeType: string },
+    apiKey: string,
+    signal: AbortSignal
+  ): Promise<string> {
+    const current = settings.get()
+    const start = performance.now()
+    const transcription = await transcribe({
+      apiKey,
+      model: current.transcriptionModel,
+      audio: recording.audio,
+      format: audioFormat(recording.mimeType),
+      language: current.language === 'auto' ? null : current.language,
+      signal
+    })
+    turn.timing.transcriptionMs = performance.now() - start
+    addUsage(turn, transcription.cost, transcription.tokens)
+    this.hooks.onSpend()
+    return transcription.text
   }
 
   /** Runs the model's generate_image call with the image model chosen in the tray. */

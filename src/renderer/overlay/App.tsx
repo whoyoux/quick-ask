@@ -46,7 +46,8 @@ export function App() {
   // Esc closes the panel only once the user has clicked into it; elsewhere Esc belongs to other apps.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') api.close()
+      // The text box handles Esc itself while it holds a draft.
+      if (event.key === 'Escape' && !event.defaultPrevented) api.close()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -249,6 +250,8 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
 
       {view.attachments.length > 0 && <PendingAttachments names={view.attachments} />}
 
+      <Composer followUp={view.turns.length > 0} />
+
       <footer className={`flex min-h-9 items-center justify-between gap-3 border-t border-border py-1 pr-1.5 pl-5 ${DRAG}`}>
         {/* Not `truncate` while recording: its overflow clipping would cut off the pulsing dot's halo. */}
         <div className={`min-w-0 text-xs ${view.recording ? '' : 'truncate'}`}>
@@ -317,13 +320,64 @@ function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`
 }
 
+/** Typing instead of speaking: Enter sends, Shift+Enter starts a new line. */
+function Composer({ followUp }: { followUp: boolean }) {
+  const [text, setText] = useState('')
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => api.onFocusInput(() => inputRef.current?.focus()), [])
+
+  // Grows with the text up to a few lines, then scrolls.
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`
+  }, [text])
+
+  const send = (): void => {
+    if (!text.trim()) return
+    api.askText(text)
+    setText('')
+  }
+
+  return (
+    <div className={`flex items-end gap-2 border-t border-border py-2 pr-2 pl-5 ${NO_DRAG}`}>
+      <textarea
+        ref={inputRef}
+        rows={1}
+        value={text}
+        placeholder={followUp ? 'Napisz, aby dopytać…' : 'Napisz pytanie…'}
+        aria-label="Pytanie"
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault()
+            send()
+          } else if (event.key === 'Escape' && text) {
+            // First Esc clears the draft; the next one closes the panel.
+            event.preventDefault()
+            setText('')
+          }
+        }}
+        className="max-h-[120px] min-h-7 flex-1 resize-none bg-transparent py-1 text-[14px] leading-5 text-foreground outline-none placeholder:text-faint select-text"
+      />
+      <Button variant={text.trim() ? 'primary' : 'ghost'} label="Wyślij (Enter)" onClick={send}>
+        Wyślij
+      </Button>
+    </div>
+  )
+}
+
 /** Which models answered, how fast and for how much, to help pick models in the menu. */
 function Timing({ turn }: { turn: Turn }) {
   const { timing, costUsd } = turn
   const parts: string[] = []
-  if (timing.transcriptionMs !== null && timing.firstTokenMs !== null) {
+  if (timing.firstTokenMs !== null) {
+    const answer = `${timing.chatModel} ${seconds(timing.firstTokenMs)}`
+    // Typed questions skip transcription.
     parts.push(
-      `${timing.transcriptionModel} ${seconds(timing.transcriptionMs)} → ${timing.chatModel} ${seconds(timing.firstTokenMs)}`
+      timing.transcriptionMs !== null ? `${timing.transcriptionModel} ${seconds(timing.transcriptionMs)} → ${answer}` : answer
     )
   }
   if (turn.tokens) parts.push(formatTokens(turn.tokens.input + turn.tokens.output))

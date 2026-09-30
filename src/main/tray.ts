@@ -129,6 +129,7 @@ export interface TrayState {
 
 export interface TrayActions {
   toggleHandsFree(): void
+  startTyping(): void
   attachClipboard(): void
   attachFiles(): void
   showLastConversation(): void
@@ -195,6 +196,7 @@ export class TrayMenu {
         enabled: state.hasKey,
         click: () => this.actions.toggleHandsFree()
       },
+      { label: 'Napisz pytanie…', enabled: state.hasKey, click: () => this.actions.startTyping() },
       {
         label: 'Wróć do ostatniej rozmowy',
         enabled: state.hasConversation,

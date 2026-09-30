@@ -82,7 +82,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases)
 
 ### M6: Po MVP
-- [ ] T6.2 Pisanie pytania zamiast mówienia (pole tekstowe w panelu)
+- [x] T6.2 Pisanie pytania zamiast mówienia: pole tekstowe w panelu (Enter wysyła, Shift+Enter nowa linia, Esc czyści szkic) i „Napisz pytanie…” w menu
 - [x] T6.3a Obrazy jako załącznik do pytania (maks. 3): ze schowka (także skopiowane pliki), z dysku, przeciągnięte albo wklejone do panelu
 - [ ] T6.3b Kontekst: zaznaczony tekst / zrzut ekranu jako załącznik do pytania
 - [x] T6.7 Generowanie i edycja obrazów: model czatu wywołuje narzędzie `generate_image`, rysuje model z menu „Model obrazów” przez `POST /api/v1/images`; edycja załączonych albo ostatnio wygenerowanych obrazów; kopiuj / zapisz / otwórz; pliki w `userData/images`, sprzątane po usunięciu rozmowy
