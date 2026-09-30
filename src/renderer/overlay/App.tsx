@@ -202,16 +202,16 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
   return (
     <section className={`flex h-screen flex-col bg-graphite ${dragging ? 'ring-2 ring-brand ring-inset' : ''}`}>
       <header
-        className={`flex h-10 shrink-0 items-center gap-2 border-b border-border ${IS_MAC ? 'pr-2 pl-20' : 'pr-[148px] pl-4'} ${DRAG}`}
+        className={`flex h-10 shrink-0 items-center gap-2 whitespace-nowrap ${IS_MAC ? 'pr-2 pl-20' : 'pr-[148px] pl-4'} ${DRAG}`}
       >
-        <img src={iconUrl} alt="" className="size-4 rounded-[4px]" />
-        <span className="text-xs text-muted-foreground">Quick Ask</span>
+        <img src={iconUrl} alt="" className="size-4 shrink-0 rounded-[4px]" />
+        <span className="shrink-0 text-xs text-muted-foreground">Quick Ask</span>
         {summary.length > 0 && (
-          <span className="text-xs text-faint tabular-nums" title="Tokeny i koszt tej rozmowy w OpenRouter">
+          <span className="min-w-0 truncate text-xs text-faint tabular-nums" title="Tokeny i koszt tej rozmowy w OpenRouter">
             · {summary.join(' · ')}
           </span>
         )}
-        <span className={`ml-auto flex gap-0.5 ${NO_DRAG}`}>
+        <span className={`ml-auto flex shrink-0 gap-0.5 ${NO_DRAG}`}>
           <Button variant="ghost" label="Dołącz obraz ze schowka" onClick={() => api.attachClipboard()}>
             <ClipboardIcon />
           </Button>
@@ -230,6 +230,9 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
           )}
         </span>
       </header>
+      {/* The system paints the window buttons over the top 40 px, so a border inside the header
+          would stop where they start; this line sits just below them and spans the whole width. */}
+      <div aria-hidden className="h-px shrink-0 bg-border" />
 
       <div
         ref={threadRef}
