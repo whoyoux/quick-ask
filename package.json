@@ -1,0 +1,44 @@
+{
+  "name": "quick-ask",
+  "productName": "Quick Ask",
+  "version": "0.1.0",
+  "description": "Hold a key, ask out loud, get an AI answer in a small overlay.",
+  "main": "./out/main/index.js",
+  "author": "whoyoux",
+  "license": "MIT",
+  "homepage": "https://github.com/whoyoux/quick-ask",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whoyoux/quick-ask.git"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/make-icons.ts",
+    "dist": "electron-vite build && electron-builder"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@streamdown/code": "^1.1.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "rehype-harden": "^1.1.8",
+    "streamdown": "^2.6.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}

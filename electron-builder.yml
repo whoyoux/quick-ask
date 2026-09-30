@@ -1,0 +1,36 @@
+appId: com.whoyoux.quickask
+productName: Quick Ask
+directories:
+  buildResources: build
+  output: release/${version}
+files:
+  - out/**
+  - resources/**
+  - package.json
+# uiohook-napi ships N-API prebuilds that work on every Electron version; nothing to compile.
+npmRebuild: false
+asarUnpack:
+  - node_modules/uiohook-napi/**
+
+mac:
+  target: dmg
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # Menu bar app: no Dock icon.
+    LSUIElement: true
+    NSMicrophoneUsageDescription: Quick Ask nagrywa pytanie tylko wtedy, gdy trzymasz klawisz nagrywania.
+
+win:
+  target: nsis
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
