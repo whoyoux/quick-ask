@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RENAMED_MODELS } from './models'
 import type { PttKeyId } from './push-to-talk'
+import type { ToolId } from './tools/types'
 
 export type Language = 'auto' | 'pl' | 'en'
 export type AnswerLength = 'short' | 'normal' | 'detailed'
@@ -29,6 +30,8 @@ export interface Settings {
   saveHistory: boolean
   /** Let the model search the web (OpenRouter's server-side web search tool). */
   webSearch: boolean
+  /** Tools switched off in the tray's "Narzędzia AI" menu; new tools start switched on. */
+  disabledTools: ToolId[]
   /** Draws the pictures the chat model asks for. */
   imageModel: string
   /** Where the user left the chat window, in screen DIPs. */
@@ -49,6 +52,7 @@ function defaults(): Settings {
     micLabel: null,
     saveHistory: true,
     webSearch: true,
+    disabledTools: [],
     imageModel: DEFAULT_IMAGE_MODEL,
     chatBounds: null
   }

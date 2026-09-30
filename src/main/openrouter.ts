@@ -24,21 +24,30 @@ const KEY_CHECK_TIMEOUT_MS = 15_000
 const IMAGE_TIMEOUT_MS = 180_000
 
 export class OpenRouterError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number
-  ) {
+  readonly status?: number
+
+  constructor(message: string, status?: number) {
     super(message)
     this.name = 'OpenRouterError'
+    this.status = status
   }
 }
 
 export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string | ContentPart[]
-}
+/** A reasoning block as OpenRouter reports it; echoed back verbatim during a tool loop. */
+export type ReasoningDetail = Record<string, unknown>
+
+export type ChatMessage =
+  | { role: 'system' | 'user'; content: string | ContentPart[] }
+  | {
+      role: 'assistant'
+      content: string | null
+      tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]
+      /** Gemini and Claude refuse a tool result unless their reasoning comes back unchanged. */
+      reasoning_details?: ReasoningDetail[]
+    }
+  | { role: 'tool'; tool_call_id: string; content: string }
 
 /** A function the model may call; we run it ourselves. */
 export interface FunctionTool {
@@ -48,6 +57,8 @@ export interface FunctionTool {
 }
 
 export interface ToolCall {
+  /** Pairs the call with its result in the next request. */
+  id: string
   name: string
   /** JSON text, as the model wrote it. */
   arguments: string
@@ -63,10 +74,13 @@ export interface KeyInfo {
 }
 
 export interface ChatResult {
+  /** Everything this request streamed through `onDelta`. */
+  text: string
   /** USD, from OpenRouter's usage accounting; null if the response didn't include it. */
   cost: number | null
   tokens: TokenUsage | null
   toolCalls: ToolCall[]
+  reasoningDetails: ReasoningDetail[]
 }
 
 export interface Transcription {
@@ -137,12 +151,15 @@ function describeStatus(status: number, detail: string): string {
 class Deadline {
   readonly signal: AbortSignal
   private readonly timeout = new AbortController()
+  private readonly ms: number
+  private readonly caller?: AbortSignal
   private timer: NodeJS.Timeout
 
-  constructor(
-    private readonly ms: number,
-    private readonly caller?: AbortSignal
-  ) {
+  // Plain fields rather than parameter properties: scripts/test-tools.ts loads this file with
+  // Node's type stripping, which doesn't support them.
+  constructor(ms: number, caller?: AbortSignal) {
+    this.ms = ms
+    this.caller = caller
     this.signal = caller ? AbortSignal.any([caller, this.timeout.signal]) : this.timeout.signal
     this.timer = setTimeout(() => this.timeout.abort(), ms)
   }
@@ -263,6 +280,8 @@ interface ChatOptions {
   webSearch: boolean
   /** Functions the model may call; the calls come back in the result. */
   functions: FunctionTool[]
+  /** 'none' makes the model answer in text even though the conversation already used tools. */
+  toolChoice?: 'auto' | 'none'
   onDelta: (text: string) => void
   onSource: (source: Source) => void
   signal?: AbortSignal
@@ -286,9 +305,10 @@ export async function streamChat(options: ChatOptions): Promise<ChatResult> {
 
 async function streamOnce(options: ChatOptions, withTools: boolean): Promise<ChatResult> {
   const deadline = new Deadline(STREAM_IDLE_TIMEOUT_MS, options.signal)
-  const result: ChatResult = { cost: null, tokens: null, toolCalls: [] }
+  const result: ChatResult = { text: '', cost: null, tokens: null, toolCalls: [], reasoningDetails: [] }
   // Tool calls stream in pieces, keyed by index.
   const calls = new Map<number, ToolCall>()
+  const reasoning = new ReasoningCollector()
   const seen = new Set<string>()
   const addSources = (annotations: unknown): void => {
     if (!Array.isArray(annotations)) return
@@ -300,7 +320,10 @@ async function streamOnce(options: ChatOptions, withTools: boolean): Promise<Cha
     }
   }
   const finish = (): ChatResult => {
-    result.toolCalls = [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call)
+    result.toolCalls = [...calls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([index, call]) => ({ ...call, id: call.id || `call_${index}` }))
+    result.reasoningDetails = reasoning.details()
     return result
   }
   const tools = withTools
@@ -314,7 +337,7 @@ async function streamOnce(options: ChatOptions, withTools: boolean): Promise<Cha
       model: options.model,
       messages: options.messages,
       stream: true,
-      ...(tools.length > 0 ? { tools } : {})
+      ...(tools.length > 0 ? { tools, ...(options.toolChoice ? { tool_choice: options.toolChoice } : {}) } : {})
     }
     const response = await request(
       '/chat/completions',
@@ -353,7 +376,8 @@ async function streamOnce(options: ChatOptions, withTools: boolean): Promise<Cha
             delta?: {
               content?: string | null
               annotations?: unknown
-              tool_calls?: { index?: number; function?: { name?: string; arguments?: string } }[]
+              reasoning_details?: unknown
+              tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[]
             }
             message?: { annotations?: unknown }
           }[]
@@ -373,19 +397,70 @@ async function streamOnce(options: ChatOptions, withTools: boolean): Promise<Cha
         const choice = event.choices?.[0]
         addSources(choice?.delta?.annotations)
         addSources(choice?.message?.annotations)
+        reasoning.add(choice?.delta?.reasoning_details)
         for (const part of choice?.delta?.tool_calls ?? []) {
           const index = part.index ?? 0
-          const call = calls.get(index) ?? { name: '', arguments: '' }
+          const call = calls.get(index) ?? { id: '', name: '', arguments: '' }
+          call.id ||= part.id ?? ''
           call.name += part.function?.name ?? ''
           call.arguments += part.function?.arguments ?? ''
           calls.set(index, call)
         }
         const delta = choice?.delta?.content
-        if (delta) options.onDelta(delta)
+        if (delta) {
+          result.text += delta
+          options.onDelta(delta)
+        }
       }
     }
   } finally {
     deadline.clear()
+  }
+}
+
+/** Text-like fields arrive in fragments; every other field is complete in whichever chunk carries it. */
+const STREAMED_FIELDS = new Set(['text', 'summary', 'data'])
+
+/**
+ * Rebuilds the reasoning blocks from their streamed fragments, in the order they started.
+ * Fragments of one block share its `index` (and type; a Gemini thought signature can share
+ * the index of a text block).
+ */
+export class ReasoningCollector {
+  private readonly blocks = new Map<string, ReasoningDetail>()
+  private readonly lastKeyOfIndex = new Map<number, string>()
+  private unindexed = 0
+
+  add(fragments: unknown): void {
+    if (!Array.isArray(fragments)) return
+    for (const fragment of fragments) {
+      if (!fragment || typeof fragment !== 'object') continue
+      const part = fragment as ReasoningDetail
+      const index = typeof part.index === 'number' ? part.index : null
+      const key =
+        index === null
+          ? `#${this.unindexed++}`
+          : typeof part.type === 'string'
+            ? `${part.type}|${index}`
+            : (this.lastKeyOfIndex.get(index) ?? `?|${index}`)
+      if (index !== null) this.lastKeyOfIndex.set(index, key)
+      const block = this.blocks.get(key)
+      if (!block) {
+        this.blocks.set(key, { ...part })
+        continue
+      }
+      for (const [field, value] of Object.entries(part)) {
+        if (STREAMED_FIELDS.has(field) && typeof value === 'string') {
+          block[field] = (typeof block[field] === 'string' ? block[field] : '') + value
+        } else if (value !== null && value !== undefined && value !== '') {
+          block[field] = value
+        }
+      }
+    }
+  }
+
+  details(): ReasoningDetail[] {
+    return [...this.blocks.values()]
   }
 }
 

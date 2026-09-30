@@ -7,6 +7,7 @@ import { CHAT_MODELS, IMAGE_MODELS, TRANSCRIPTION_MODELS, type ModelOption } fro
 import type { KeyInfo } from './openrouter'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
 import { settings, type AnswerLength, type Language, type Settings } from './settings'
+import { TOOL_MENU } from './tools'
 
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'auto', label: 'Wykrywaj automatycznie' },
@@ -246,6 +247,20 @@ export class TrayMenu {
         type: 'checkbox',
         checked: current.webSearch,
         click: (item) => settings.update({ webSearch: item.checked })
+      },
+      {
+        label: 'Narzędzia AI',
+        submenu: TOOL_MENU.map((tool) => ({
+          label: tool.label,
+          type: 'checkbox',
+          checked: !current.disabledTools.includes(tool.id),
+          click: (item) =>
+            settings.update({
+              disabledTools: item.checked
+                ? current.disabledTools.filter((id) => id !== tool.id)
+                : [...current.disabledTools, tool.id]
+            })
+        }))
       },
       { label: 'Mikrofon', submenu: microphoneItems(this.microphones, current) },
       {

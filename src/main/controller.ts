@@ -1,6 +1,14 @@
 import { systemPreferences } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { MAX_ATTACHMENTS, type ImageName, type OverlayView, type RecordingOutcome, type TokenUsage, type Turn } from '../shared/types'
+import {
+  MAX_ATTACHMENTS,
+  type ImageName,
+  type OverlayView,
+  type RecordingOutcome,
+  type TokenUsage,
+  type ToolUse,
+  type Turn
+} from '../shared/types'
 import type { HistoryStore, TurnRecord } from './db/history'
 import { debug } from './debug'
 import { deleteImages, ImageError, imageDataUrl, storeImage } from './images'
@@ -18,7 +26,8 @@ import {
 import type { Surfaces } from './surfaces'
 import { buildSystemPrompt } from './prompt'
 import { getApiKey } from './secrets'
-import { settings } from './settings'
+import { settings, type Settings } from './settings'
+import { enabledTools, ToolError, toolInstructions, type LocalTool } from './tools'
 import { isLikelyHallucination } from './transcript-filter'
 
 /** Safety net for a key release we never hear about (e.g. macOS secure input). */
@@ -34,6 +43,8 @@ const STOP_TIMEOUT_MS = 5000
 const HISTORY_TURNS = 10
 /** Streaming tokens are batched into one UI update per interval. */
 const RENDER_INTERVAL_MS = 40
+/** Rounds of tool calls; after that the model has to answer with what it has. */
+const MAX_TOOL_ROUNDS = 4
 
 type RecorderPhase = 'idle' | 'arming' | 'recording' | 'stopping'
 
@@ -356,6 +367,7 @@ export class Controller {
         sources: t.sources ?? [],
         attachments: t.attachments ?? [],
         images: t.images ?? [],
+        tools: t.tools ?? [],
         generatingImage: false
       })
     )
@@ -529,6 +541,7 @@ export class Controller {
       sources: [],
       attachments: [],
       images: [],
+      tools: [],
       generatingImage: false
     }
     this.view.turns.push(turn)
@@ -560,29 +573,8 @@ export class Controller {
       turn.status = 'answering'
       this.pushView()
 
-      const answerStart = performance.now()
-      const chat = await streamChat({
-        apiKey,
-        model: current.chatModel,
-        messages: this.buildMessages(turn),
-        webSearch: current.webSearch,
-        functions: [IMAGE_TOOL],
-        signal,
-        onDelta: (text) => {
-          turn.timing.firstTokenMs ??= performance.now() - answerStart
-          turn.answer += text
-          this.scheduleRender()
-        },
-        onSource: (source) => {
-          turn.sources.push(source)
-          this.scheduleRender()
-        }
-      })
-      addUsage(turn, chat.cost, chat.tokens)
-      this.hooks.onSpend()
+      await this.answer(turn, apiKey, current, signal)
       debug('timing', turn.timing, 'cost', turn.costUsd, 'tokens', turn.tokens)
-      const imageCall = chat.toolCalls.find((call) => call.name === IMAGE_TOOL.name)
-      if (imageCall) await this.drawImage(turn, imageCall, apiKey, current.imageModel, signal)
       if (signal.aborted) return
       if (turn.answer.trim() || turn.images.length > 0) {
         turn.status = 'done'
@@ -615,6 +607,7 @@ export class Controller {
       outputTokens: turn.tokens?.output ?? null,
       attachments: turn.attachments.length > 0 ? turn.attachments : null,
       images: turn.images.length > 0 ? turn.images : null,
+      tools: turn.tools.length > 0 ? turn.tools : null,
       createdAt: askedAt
     })
   }
@@ -650,6 +643,112 @@ export class Controller {
     addUsage(turn, transcription.cost, transcription.tokens)
     this.hooks.onSpend()
     return transcription.text
+  }
+
+  /**
+   * Streams the answer. When the model calls our tools, runs them and sends the results back so
+   * it can go on; generate_image ends the answer instead, since the picture is the answer.
+   */
+  private async answer(turn: Turn, apiKey: string, current: Settings, signal: AbortSignal): Promise<void> {
+    const tools = enabledTools(current.disabledTools)
+    const functions = [IMAGE_TOOL, ...tools.map((tool) => tool.definition)]
+    const messages = this.buildMessages(turn, toolInstructions(current.disabledTools))
+    const answerStart = performance.now()
+    for (let round = 0; ; round++) {
+      // Text written before a tool call stays; what comes after it starts a new paragraph.
+      let paragraph = turn.answer.trim() !== ''
+      const chat = await streamChat({
+        apiKey,
+        model: current.chatModel,
+        messages,
+        webSearch: current.webSearch,
+        functions,
+        toolChoice: round === MAX_TOOL_ROUNDS ? 'none' : undefined,
+        signal,
+        onDelta: (text) => {
+          turn.timing.firstTokenMs ??= performance.now() - answerStart
+          if (paragraph) {
+            turn.answer = `${turn.answer.trimEnd()}\n\n`
+            paragraph = false
+          }
+          turn.answer += text
+          this.scheduleRender()
+        },
+        onSource: (source) => {
+          if (turn.sources.some((s) => s.url === source.url)) return
+          turn.sources.push(source)
+          this.scheduleRender()
+        }
+      })
+      addUsage(turn, chat.cost, chat.tokens)
+      this.hooks.onSpend()
+      if (signal.aborted) return
+      const imageCall = chat.toolCalls.find((call) => call.name === IMAGE_TOOL.name)
+      if (imageCall) {
+        await this.drawImage(turn, imageCall, apiKey, current.imageModel, signal)
+        return
+      }
+      if (chat.toolCalls.length === 0 || round === MAX_TOOL_ROUNDS) return
+
+      messages.push({
+        role: 'assistant',
+        content: chat.text || null,
+        tool_calls: chat.toolCalls.map((call) => ({
+          id: call.id,
+          type: 'function',
+          function: { name: call.name, arguments: call.arguments || '{}' }
+        })),
+        // Gemini rejects the tool results without its thought signatures, Claude without its thinking.
+        ...(chat.reasoningDetails.length > 0 ? { reasoning_details: chat.reasoningDetails } : {})
+      })
+      const results = await Promise.all(chat.toolCalls.map((call) => this.runTool(turn, call, tools, signal)))
+      chat.toolCalls.forEach((call, i) => messages.push({ role: 'tool', tool_call_id: call.id, content: results[i] }))
+    }
+  }
+
+  /** Runs one of our tools. Its text goes back to the model, errors included, so the model can recover. */
+  private async runTool(turn: Turn, call: ToolCall, tools: LocalTool[], signal: AbortSignal): Promise<string> {
+    const tool = tools.find((t) => t.definition.name === call.name)
+    const use: ToolUse = { name: call.name, label: tool?.label ?? call.name, input: '', output: null, status: 'running' }
+    turn.tools.push(use)
+    this.pushView()
+    try {
+      if (!tool) throw new ToolError(`Nie ma narzędzia ${call.name}.`)
+      let args: unknown
+      try {
+        args = JSON.parse(call.arguments || '{}')
+      } catch {
+        args = null
+      }
+      if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        use.input = call.arguments
+        throw new ToolError('Argumenty wywołania nie są poprawnym obiektem JSON.')
+      }
+      const params = args as Record<string, unknown>
+      use.input = tool.describe(params)
+      this.pushView()
+      debug('tool', call.name, use.input)
+      const output = await tool.run(params, {
+        signal,
+        question: turn.question,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      })
+      use.status = 'done'
+      use.output = output.display ?? output.content
+      for (const source of output.sources ?? []) {
+        if (!turn.sources.some((s) => s.url === source.url)) turn.sources.push(source)
+      }
+      return output.content
+    } catch (error) {
+      if (signal.aborted) throw error
+      const message = error instanceof ToolError ? error.message : `Nieoczekiwany błąd: ${error instanceof Error ? error.message : String(error)}`
+      debug('tool failed', call.name, message)
+      use.status = 'error'
+      use.output = message
+      return `Błąd: ${message}`
+    } finally {
+      this.pushView()
+    }
   }
 
   /** Runs the model's generate_image call with the image model chosen in the tray. */
@@ -714,7 +813,7 @@ export class Controller {
     this.displaced = null
   }
 
-  private buildMessages(current: Turn): ChatMessage[] {
+  private buildMessages(current: Turn, toolLines: string[]): ChatMessage[] {
     // A follow-up asked while the previous answer is still streaming gets what arrived so far.
     const answered = (t: Turn): boolean =>
       t.status === 'done' || (t.status === 'answering' && (t.answer.trim() !== '' || t.images.length > 0))
@@ -730,7 +829,7 @@ export class Controller {
             ]
           }
     return [
-      { role: 'system', content: buildSystemPrompt(settings.get()) },
+      { role: 'system', content: buildSystemPrompt(settings.get(), toolLines) },
       ...history.flatMap((t): ChatMessage[] => [
         userMessage(t),
         {

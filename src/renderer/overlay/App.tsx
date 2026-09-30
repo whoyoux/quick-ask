@@ -7,6 +7,7 @@ import {
   type OverlayView,
   type RecordingIndicator,
   type Source,
+  type ToolUse,
   type Turn
 } from '../../shared/types'
 import iconUrl from '../assets/icon.svg'
@@ -295,9 +296,13 @@ function TurnView({ turn }: { turn: Turn }) {
           ))}
         </div>
       )}
-      {turn.status === 'answering' && !turn.answer && !turn.generatingImage && (
-        <p className="text-[15px] text-faint motion-safe:animate-breathe">Myślę…</p>
-      )}
+      {turn.tools.length > 0 && <ToolUses tools={turn.tools} />}
+      {turn.status === 'answering' &&
+        !turn.answer &&
+        !turn.generatingImage &&
+        !turn.tools.some((tool) => tool.status === 'running') && (
+          <p className="text-[15px] text-faint motion-safe:animate-breathe">Myślę…</p>
+        )}
       {turn.answer && <Answer text={turn.answer} streaming={turn.status === 'answering' && !turn.generatingImage} />}
       {turn.generatingImage && (
         <div className="mt-2 flex h-40 items-center justify-center rounded-xl border border-border bg-white/3 text-[13px] text-faint motion-safe:animate-breathe">
@@ -311,6 +316,48 @@ function TurnView({ turn }: { turn: Turn }) {
       {turn.error && <p className="mt-1.5 text-brand-light">{turn.error}</p>}
       {turn.status === 'done' && <Timing turn={turn} />}
     </article>
+  )
+}
+
+/** What the model computed or looked up, one line each; opening one shows the input and the result. */
+function ToolUses({ tools }: { tools: ToolUse[] }) {
+  return (
+    <div className="mb-2.5 flex flex-col gap-1">
+      {tools.map((tool, i) => (
+        <details key={i} className="rounded-lg border border-border bg-white/3 text-[12px]">
+          <summary
+            className={`flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 select-none [&::-webkit-details-marker]:hidden ${
+              tool.status === 'running' ? 'motion-safe:animate-breathe' : ''
+            }`}
+          >
+            <ToolStatus status={tool.status} />
+            <span className="shrink-0 text-muted-foreground">{tool.label}</span>
+            <span className="min-w-0 truncate font-mono text-[11px] text-faint">{tool.input.split('\n')[0]}</span>
+          </summary>
+          <div className="flex flex-col gap-1.5 border-t border-border px-2.5 py-2">
+            {tool.input && <ToolText label="Wejście" text={tool.input} />}
+            {tool.output !== null && <ToolText label={tool.status === 'error' ? 'Błąd' : 'Wynik'} text={tool.output} />}
+          </div>
+        </details>
+      ))}
+    </div>
+  )
+}
+
+function ToolStatus({ status }: { status: ToolUse['status'] }) {
+  if (status === 'running') return <span aria-label="W toku" className="size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+  if (status === 'error') return <span aria-label="Błąd" className="size-1.5 shrink-0 rounded-full bg-brand" />
+  return <span aria-label="Gotowe" className="size-1.5 shrink-0 rounded-full bg-emerald-400/80" />
+}
+
+function ToolText({ label, text }: { label: string; text: string }) {
+  return (
+    <div>
+      <div className="mb-0.5 text-[11px] text-faint">{label}</div>
+      <pre className="max-h-48 overflow-auto rounded-md bg-black/25 px-2 py-1.5 font-mono text-[11px] leading-snug whitespace-pre-wrap text-muted-foreground select-text">
+        {text}
+      </pre>
+    </div>
   )
 }
 

@@ -20,6 +20,8 @@ files:
 npmRebuild: false
 asarUnpack:
   - node_modules/uiohook-napi/**
+  # The JavaScript sandbox's worker thread loads its script from disk (src/main/tools/javascript.ts).
+  - out/main/javascript.worker-*.js
 
 mac:
   target:

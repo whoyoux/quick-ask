@@ -61,6 +61,7 @@ function turn(position: number, question: string, answer: string, extra: Partial
     outputTokens: null,
     attachments: null,
     images: null,
+    tools: null,
     createdAt: Date.now(),
     ...extra
   }
@@ -275,5 +276,7 @@ test('titles are cut at a word boundary', () => {
 test('snippets are one line of plain text', () => {
   assert.equal(toSnippet('# Nagłówek\n\n**Pogrubienie** i `kod`.\n- punkt\n> cytat'), 'Nagłówek Pogrubienie i kod. punkt cytat')
   assert.equal(toSnippet('Zobacz [dokumentację](https://example.com).'), 'Zobacz dokumentację.')
+  assert.equal(toSnippet('Suma: 30.\n\n```vega-lite\n{"mark": "bar"}\n```\n\nKoniec.'), 'Suma: 30. Koniec.')
+  assert.equal(toSnippet('Wykres:\n```vega-lite\n{"mark": '), 'Wykres:')
   assert.ok(toSnippet('słowo '.repeat(100)).length <= 161)
 })

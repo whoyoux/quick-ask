@@ -24,6 +24,19 @@ export interface TokenUsage {
   output: number
 }
 
+/** A tool the model ran while answering, shown above the answer. */
+export interface ToolUse {
+  /** The function name, e.g. `run_javascript`. */
+  name: string
+  /** What the panel calls it, e.g. "Obliczenia". */
+  label: string
+  /** What the model asked for: the code, "100 USD → PLN", a city. */
+  input: string
+  /** What came back, shortened for display; null while it runs. */
+  output: string | null
+  status: 'running' | 'done' | 'error'
+}
+
 /**
  * A picture the user attached or a model generated, stored as a file in the app's images
  * folder and shown through the `qa-image:` protocol. `name` is the file name.
@@ -47,6 +60,8 @@ export interface Turn {
   attachments: ImageName[]
   /** Pictures the image model made for this answer. */
   images: ImageName[]
+  /** Tools the model used for this answer, in the order it called them. */
+  tools: ToolUse[]
   /** An image is being generated (shown as a placeholder). */
   generatingImage: boolean
 }
