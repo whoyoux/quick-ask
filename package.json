@@ -1,7 +1,7 @@
 {
   "name": "quick-ask",
   "productName": "Quick Ask",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hold a key, ask out loud, get an AI answer in a small overlay.",
   "main": "./out/main/index.js",
   "author": "whoyoux",
