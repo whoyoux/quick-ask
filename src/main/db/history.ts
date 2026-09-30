@@ -60,6 +60,9 @@ export class HistoryStore {
       where t.conversation_id = conversations.id and t.status = 'done'
       order by t.position limit 1
     )`
+    const costUsd = sql<number | null>`(
+      select sum(t.cost_usd) from turns t where t.conversation_id = conversations.id
+    )`
     const needle = query.trim().toLowerCase()
     const pattern = `%${needle.replace(/[\\%_]/g, '\\$&')}%`
     const matching = this.db
@@ -71,6 +74,7 @@ export class HistoryStore {
         id: conversations.id,
         title: conversations.title,
         updatedAt: conversations.updatedAt,
+        costUsd,
         firstAnswer
       })
       .from(conversations)

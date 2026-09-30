@@ -41,6 +41,8 @@ export interface ControllerHooks {
   onConversationChange(): void
   /** A turn was saved to the history database. */
   onHistoryChange(): void
+  /** OpenRouter billed something, so the balance in the tray is out of date. */
+  onSpend(): void
   openSettings(): void
   /** Footer hint, e.g. "Przytrzymaj prawy Ctrl, aby dopytać". */
   hint(followUp: boolean): string
@@ -219,7 +221,9 @@ export class Controller {
           transcriptionMs: t.transcriptionMs,
           chatModel: modelName(t.chatModel),
           firstTokenMs: t.firstTokenMs
-        }
+        },
+        costUsd: t.costUsd,
+        sources: t.sources ?? []
       })
     )
     this.clearNoticeTimer()
@@ -378,7 +382,9 @@ export class Controller {
         transcriptionMs: null,
         chatModel: modelName(current.chatModel),
         firstTokenMs: null
-      }
+      },
+      costUsd: null,
+      sources: []
     }
     this.view.turns.push(turn)
     this.view.mode = 'panel'
@@ -389,7 +395,7 @@ export class Controller {
 
     try {
       const transcriptionStart = performance.now()
-      const question = await transcribe({
+      const transcription = await transcribe({
         apiKey,
         model: current.transcriptionModel,
         audio,
@@ -398,6 +404,9 @@ export class Controller {
         signal
       })
       turn.timing.transcriptionMs = performance.now() - transcriptionStart
+      turn.costUsd = transcription.cost
+      this.hooks.onSpend()
+      const question = transcription.text
       if (signal.aborted) return
       if (isLikelyHallucination(question)) {
         this.view.turns = this.view.turns.filter((t) => t !== turn)
@@ -416,18 +425,25 @@ export class Controller {
       this.pushView()
 
       const answerStart = performance.now()
-      await streamChat({
+      const chat = await streamChat({
         apiKey,
         model: current.chatModel,
         messages: this.buildMessages(turn),
+        webSearch: current.webSearch,
         signal,
         onDelta: (text) => {
           turn.timing.firstTokenMs ??= performance.now() - answerStart
           turn.answer += text
           this.scheduleRender()
+        },
+        onSource: (source) => {
+          turn.sources.push(source)
+          this.scheduleRender()
         }
       })
-      debug('timing', turn.timing)
+      if (chat.cost !== null) turn.costUsd = (turn.costUsd ?? 0) + chat.cost
+      this.hooks.onSpend()
+      debug('timing', turn.timing, 'cost', turn.costUsd)
       if (turn.answer.trim()) {
         turn.status = 'done'
       } else {
@@ -437,6 +453,8 @@ export class Controller {
     } catch (error) {
       if (signal.aborted) return
       this.dropDisplaced()
+      // A request that failed half-way may still have been billed.
+      if (turn.status === 'answering') this.hooks.onSpend()
       turn.status = 'error'
       turn.error =
         error instanceof OpenRouterError
@@ -454,6 +472,8 @@ export class Controller {
       chatModel: current.chatModel,
       transcriptionMs: roundMs(turn.timing.transcriptionMs),
       firstTokenMs: roundMs(turn.timing.firstTokenMs),
+      costUsd: turn.costUsd,
+      sources: turn.sources.length > 0 ? turn.sources : null,
       createdAt: askedAt
     })
   }

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { OverlayView, RecordingIndicator, Turn, TurnTiming } from '../../shared/types'
+import { formatUsd } from '../../shared/format'
+import type { OverlayView, RecordingIndicator, Source, Turn } from '../../shared/types'
 import iconUrl from '../assets/icon.svg'
 import { Answer } from './Answer'
 import { useLevels } from './levels'
@@ -127,6 +128,8 @@ function Panel({ view }: { view: OverlayView }) {
     if (thread && followRef.current) thread.scrollTop = thread.scrollHeight
   }, [view.turns])
 
+  const costs = view.turns.map((t) => t.costUsd).filter((c): c is number => c !== null)
+  const conversationCost = costs.length > 0 ? costs.reduce((sum, c) => sum + c, 0) : null
   const last = view.turns.at(-1)
   const lastAnswer = last?.status === 'done' ? last.answer : ''
 
@@ -141,6 +144,11 @@ function Panel({ view }: { view: OverlayView }) {
       <header className={`flex h-10 items-center gap-2 border-b border-border pr-1.5 pl-4 ${DRAG}`}>
         <img src={iconUrl} alt="" className="size-4 rounded-[4px]" />
         <span className="text-xs text-muted-foreground">Quick Ask</span>
+        {conversationCost !== null && (
+          <span className="text-xs text-faint tabular-nums" title="Koszt tej rozmowy w OpenRouter">
+            · {formatUsd(conversationCost)}
+          </span>
+        )}
         <span className={`ml-auto flex gap-0.5 ${NO_DRAG}`}>
           {lastAnswer && (
             <Button variant="ghost" onClick={copy}>
@@ -215,8 +223,9 @@ function TurnView({ turn }: { turn: Turn }) {
         <p className="text-[15px] text-faint motion-safe:animate-breathe">Myślę…</p>
       )}
       {turn.answer && <Answer text={turn.answer} streaming={turn.status === 'answering'} />}
+      {turn.sources.length > 0 && <Sources sources={turn.sources} />}
       {turn.error && <p className="mt-1.5 text-brand-light">{turn.error}</p>}
-      {turn.status === 'done' && <Timing timing={turn.timing} />}
+      {turn.status === 'done' && <Timing turn={turn} />}
     </article>
   )
 }
@@ -225,13 +234,37 @@ function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`
 }
 
-/** Which models answered and how fast, to help pick the quickest ones in the menu. */
-function Timing({ timing }: { timing: TurnTiming }) {
-  if (timing.transcriptionMs === null || timing.firstTokenMs === null) return null
+/** Which models answered, how fast and for how much, to help pick models in the menu. */
+function Timing({ turn }: { turn: Turn }) {
+  const { timing, costUsd } = turn
+  const parts: string[] = []
+  if (timing.transcriptionMs !== null && timing.firstTokenMs !== null) {
+    parts.push(
+      `${timing.transcriptionModel} ${seconds(timing.transcriptionMs)} → ${timing.chatModel} ${seconds(timing.firstTokenMs)}`
+    )
+  }
+  if (costUsd !== null) parts.push(formatUsd(costUsd))
+  if (parts.length === 0) return null
+  return <p className="mt-2 text-[11px] text-faint tabular-nums">{parts.join(' · ')}</p>
+}
+
+/** Pages the web search found; links open in the browser. */
+function Sources({ sources }: { sources: Source[] }) {
   return (
-    <p className="mt-2 text-[11px] text-faint">
-      {timing.transcriptionModel} {seconds(timing.transcriptionMs)} → {timing.chatModel}{' '}
-      {seconds(timing.firstTokenMs)}
+    <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px]">
+      <span className="text-faint">Źródła:</span>
+      {sources.map((source) => (
+        <a
+          key={source.url}
+          href={source.url}
+          target="_blank"
+          rel="noreferrer"
+          title={source.url}
+          className="max-w-56 truncate text-muted-foreground underline decoration-white/20 underline-offset-2 hover:text-foreground"
+        >
+          {source.title}
+        </a>
+      ))}
     </p>
   )
 }

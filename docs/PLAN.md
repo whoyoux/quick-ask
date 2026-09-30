@@ -50,6 +50,8 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T2.7 Nagrywanie do WAV 16 kHz przez AudioWorklet (zgodność z każdym modelem transkrypcji)
 - [x] T2.8 Czasy pod odpowiedzią: transkrypcja i pierwszy token odpowiedzi, z nazwami modeli
 - [x] T2.9 Modele transkrypcji: Grok STT (xAI) i Deepgram Nova-3
+- [x] T2.10 Koszt: `usage.cost` z transkrypcji i odpowiedzi, pod każdą odpowiedzią, suma rozmowy w nagłówku panelu i w historii
+- [x] T2.11 Wyszukiwanie w internecie: narzędzie `openrouter:web_search` (model sam decyduje), przełącznik „Szukaj w internecie” w menu, lista źródeł pod odpowiedzią; model bez obsługi narzędzi odpowiada bez wyszukiwania
 
 ### M3: Panel odpowiedzi
 - [x] T3.1 Panel: transkrypt pytania + odpowiedź przez Streamdown, dopasowanie wielkości okna do treści
@@ -62,6 +64,8 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 
 ### M4: Ustawienia i onboarding
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa
+- [x] T4.3 Polecane modele na górze list: Gemini 3.8 Flash (szybki) i Gemini Pro (myślący, alias `~google/gemini-pro-latest`), Grok STT do transkrypcji (domyślny w nowych instalacjach)
+- [x] T4.9 Wydatki w menu z `GET /api/v1/key`: dziś i łącznie, limit klucza jeśli ustawiony, „Doładuj kredyty…”; saldo całego konta wymaga klucza zarządzającego, więc go nie pokazujemy
 - [x] T4.2 Okno klucza API z testem klucza (`GET /api/v1/key`) i prośbą o Accessibility na macOS
 - [ ] T4.4 Onboarding przy pierwszym uruchomieniu: klucz API, test mikrofonu, uprawnienia
 - [x] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera); odłączony mikrofon → domyślny systemowy
@@ -78,7 +82,6 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases)
 
 ### M6: Po MVP
-- [ ] T6.1 Wyszukiwanie w sieci (plugin web OpenRoutera) jako przełącznik w menu
 - [ ] T6.2 Pisanie pytania zamiast mówienia (pole tekstowe w panelu)
 - [ ] T6.3 Kontekst: zaznaczony tekst / schowek / zrzut ekranu jako załącznik do pytania
 - [ ] T6.5 Tłumaczenie interfejsu (PL / EN)

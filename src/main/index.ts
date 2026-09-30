@@ -6,6 +6,7 @@ import { Controller } from './controller'
 import { HistoryStore } from './db/history'
 import { notifyHistoryWindow, openHistoryWindow } from './history-window'
 import { maskedKey, registerIpc } from './ipc'
+import { checkKey } from './openrouter'
 import { OverlayWindow } from './overlay-window'
 import { PTT_KEYS, PushToTalk } from './push-to-talk'
 import { getApiKey } from './secrets'
@@ -14,6 +15,8 @@ import { openSettingsWindow } from './settings-window'
 import { TrayMenu } from './tray'
 
 const isMac = process.platform === 'darwin'
+/** OpenRouter books a request's cost a moment after the response ends. */
+const BALANCE_DELAY_MS = 3000
 
 /** The conversation history; without it the app still answers questions, it just can't save them. */
 function openHistory(): HistoryStore | null {
@@ -63,6 +66,7 @@ function main(): void {
       onRecordingChange: (recording) => tray?.setRecording(recording),
       onConversationChange: () => tray?.rebuild(),
       onHistoryChange: notifyHistoryWindow,
+      onSpend: () => refreshBalanceSoon(),
       openSettings: openSettingsWindow,
       hint: (followUp) => {
         const goal = followUp ? 'dopytać' : 'zadać pytanie'
@@ -82,6 +86,29 @@ function main(): void {
     onEscape: () => controller.escape()
   })
   ptt.setKey(settings.get().pttKey)
+
+  // Spending shown in the tray, from GET /key. A failed check keeps the last known numbers.
+  let balanceRequest = 0
+  let balanceTimer: NodeJS.Timeout | null = null
+  const refreshBalance = (): void => {
+    const key = getApiKey()
+    const request = ++balanceRequest
+    if (!key) {
+      tray?.setBalance(null)
+      return
+    }
+    checkKey(key).then(
+      (info) => request === balanceRequest && tray?.setBalance(info),
+      (error) => console.warn('[quick-ask] could not refresh the balance:', error)
+    )
+  }
+  const refreshBalanceSoon = (): void => {
+    if (balanceTimer) clearTimeout(balanceTimer)
+    balanceTimer = setTimeout(() => {
+      balanceTimer = null
+      refreshBalance()
+    }, BALANCE_DELAY_MS)
+  }
 
   const refresh = (): void => {
     tray?.rebuild()
@@ -136,7 +163,10 @@ function main(): void {
     history,
     setupStatus,
     requestAccessibility,
-    onKeyChanged: refresh,
+    onKeyChanged: () => {
+      refresh()
+      refreshBalance()
+    },
     onMicrophones: (microphones) => tray?.setMicrophones(microphones)
   })
 
@@ -144,6 +174,7 @@ function main(): void {
   if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) requestAccessibility()
   else ptt.start()
   refresh()
+  refreshBalance()
 
   let previous = settings.get()
   settings.onChange((current) => {

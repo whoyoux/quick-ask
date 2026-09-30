@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { DEFAULT_CHAT_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RENAMED_MODELS } from './models'
 import type { PttKeyId } from './push-to-talk'
 
 export type Language = 'auto' | 'pl' | 'en'
@@ -26,13 +27,15 @@ export interface Settings {
   micLabel: string | null
   /** Save finished questions and answers to the local history database. */
   saveHistory: boolean
+  /** Let the model search the web (OpenRouter's server-side web search tool). */
+  webSearch: boolean
 }
 
 function defaults(): Settings {
   const systemLanguage = app.getPreferredSystemLanguages()[0] ?? ''
   return {
-    chatModel: 'google/gemini-3.8-flash',
-    transcriptionModel: 'openai/whisper-large-v3-turbo',
+    chatModel: DEFAULT_CHAT_MODEL,
+    transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
     // Auto-detection misfires on short utterances, so pin Polish for Polish systems.
     language: systemLanguage.startsWith('pl') ? 'pl' : 'auto',
     answerLength: 'normal',
@@ -40,7 +43,8 @@ function defaults(): Settings {
     overlayPosition: null,
     micDeviceId: null,
     micLabel: null,
-    saveHistory: true
+    saveHistory: true,
+    webSearch: true
   }
 }
 
@@ -73,7 +77,9 @@ class SettingsStore {
   private load(): Settings {
     try {
       const stored = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<Settings>
-      return { ...defaults(), ...stored }
+      const loaded = { ...defaults(), ...stored }
+      loaded.chatModel = RENAMED_MODELS[loaded.chatModel] ?? loaded.chatModel
+      return loaded
     } catch {
       return defaults()
     }

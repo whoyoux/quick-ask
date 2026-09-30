@@ -23,6 +23,11 @@ export function buildSystemPrompt(settings: Settings, now = new Date()): string 
     `- ${LENGTH_RULES[settings.answerLength]}`,
     '- Use Markdown sparingly: short lists, bold for the key value, code blocks only for code.',
     `- ${LANGUAGE_RULES[settings.language]}`,
+    ...(settings.webSearch
+      ? [
+          'You can search the web. Do it when the answer depends on recent events, prices, schedules or other facts that change, or when you are unsure; otherwise answer from what you know.'
+        ]
+      : []),
     `Current date and time: ${date} (${timeZone}).`
   ].join('\n')
 }

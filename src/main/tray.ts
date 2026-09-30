@@ -1,8 +1,10 @@
-import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from 'electron'
+import { app, Menu, nativeImage, shell, Tray, type MenuItemConstructorOptions, type NativeImage } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { formatUsd } from '../shared/format'
 import type { Microphone } from '../shared/types'
-import { CHAT_MODELS, TRANSCRIPTION_MODELS } from './models'
+import { CHAT_MODELS, TRANSCRIPTION_MODELS, type ModelOption } from './models'
+import type { KeyInfo } from './openrouter'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
 import { settings, type AnswerLength, type Language, type Settings } from './settings'
 
@@ -32,6 +34,40 @@ function pttKeyOptions(): { id: PttKeyId; label: string }[] {
     { id: 'shift-right', label: 'Prawy Shift' },
     // Right Alt is AltGr on Polish and many other layouts, so it collides with typing.
     { id: 'alt-right', label: 'Prawy Alt (koliduje z AltGr i polskimi znakami)' }
+  ]
+}
+
+/** Recommended models first, under a heading; a model set by hand in settings.json stays visible. */
+function modelItems(models: ModelOption[], currentId: string, choose: (id: string) => void): MenuItemConstructorOptions[] {
+  const item = (m: ModelOption): MenuItemConstructorOptions => ({
+    label: m.label,
+    type: 'radio',
+    checked: currentId === m.id,
+    click: () => choose(m.id)
+  })
+  const custom: MenuItemConstructorOptions[] = models.some((m) => m.id === currentId)
+    ? []
+    : [{ label: currentId, type: 'radio', checked: true, enabled: false }, { type: 'separator' }]
+  return [
+    ...custom,
+    { label: 'Polecane', enabled: false },
+    ...models.filter((m) => m.recommended).map(item),
+    { type: 'separator' },
+    ...models.filter((m) => !m.recommended).map(item)
+  ]
+}
+
+/** What OpenRouter tells a regular API key about money; the account balance needs a management key. */
+function balanceItems(balance: KeyInfo | null): MenuItemConstructorOptions[] {
+  if (!balance) return []
+  const lines: string[] = []
+  if (balance.limitRemaining !== null) lines.push(`Zostało na kluczu: ${formatUsd(balance.limitRemaining)}`)
+  if (balance.usageDaily !== null && balance.usage !== null) {
+    lines.push(`Wydane: ${formatUsd(balance.usageDaily)} dziś, ${formatUsd(balance.usage)} łącznie`)
+  }
+  return [
+    ...lines.map((label): MenuItemConstructorOptions => ({ label, enabled: false })),
+    { label: 'Doładuj kredyty OpenRouter…', click: () => void shell.openExternal('https://openrouter.ai/settings/credits') }
   ]
 }
 
@@ -104,6 +140,7 @@ export class TrayMenu {
   private readonly icons = { idle: loadIcon(false), recording: loadIcon(true) }
   private recording = false
   private microphones: Microphone[] = []
+  private balance: KeyInfo | null = null
 
   constructor(
     private readonly actions: TrayActions,
@@ -130,6 +167,12 @@ export class TrayMenu {
     this.rebuild()
   }
 
+  /** null hides the spending lines (no key, or OpenRouter couldn't be reached). */
+  setBalance(balance: KeyInfo | null): void {
+    this.balance = balance
+    this.rebuild()
+  }
+
   rebuild(): void {
     const state = this.state()
     const current = settings.get()
@@ -142,10 +185,6 @@ export class TrayMenu {
           ? { label: 'Włącz dostęp do klawiatury…', click: () => this.actions.requestAccessibility() }
           : { label: 'Skrót klawiszowy niedostępny: użyj „Zadaj pytanie”', enabled: false }
         : { label: `Przytrzymaj ${pttLabel} i mów`, enabled: false }
-
-    const chatModels = CHAT_MODELS.some((m) => m.id === current.chatModel)
-      ? CHAT_MODELS
-      : [{ id: current.chatModel, name: current.chatModel, label: current.chatModel }, ...CHAT_MODELS]
 
     const template: MenuItemConstructorOptions[] = [
       status,
@@ -161,23 +200,17 @@ export class TrayMenu {
       },
       { label: 'Historia rozmów…', click: () => this.actions.openHistory() },
       { type: 'separator' },
+      ...(state.hasKey ? balanceItems(this.balance) : []),
+      ...(state.hasKey && this.balance ? [{ type: 'separator' } as const] : []),
       {
         label: 'Model odpowiedzi',
-        submenu: chatModels.map((m) => ({
-          label: m.label,
-          type: 'radio',
-          checked: current.chatModel === m.id,
-          click: () => settings.update({ chatModel: m.id })
-        }))
+        submenu: modelItems(CHAT_MODELS, current.chatModel, (id) => settings.update({ chatModel: id }))
       },
       {
         label: 'Model transkrypcji',
-        submenu: TRANSCRIPTION_MODELS.map((m) => ({
-          label: m.label,
-          type: 'radio',
-          checked: current.transcriptionModel === m.id,
-          click: () => settings.update({ transcriptionModel: m.id })
-        }))
+        submenu: modelItems(TRANSCRIPTION_MODELS, current.transcriptionModel, (id) =>
+          settings.update({ transcriptionModel: id })
+        )
       },
       {
         label: 'Język',
@@ -196,6 +229,12 @@ export class TrayMenu {
           checked: current.answerLength === l.id,
           click: () => settings.update({ answerLength: l.id })
         }))
+      },
+      {
+        label: 'Szukaj w internecie',
+        type: 'checkbox',
+        checked: current.webSearch,
+        click: (item) => settings.update({ webSearch: item.checked })
       },
       { label: 'Mikrofon', submenu: microphoneItems(this.microphones, current) },
       {

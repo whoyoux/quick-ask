@@ -5,7 +5,7 @@
 //   npm run test:history
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createRequire, registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -55,6 +55,8 @@ function turn(position: number, question: string, answer: string, extra: Partial
     chatModel: 'google/gemini-3.8-flash',
     transcriptionMs: 420,
     firstTokenMs: 610,
+    costUsd: null,
+    sources: null,
     createdAt: Date.now(),
     ...extra
   }
@@ -72,10 +74,31 @@ test('migrations create the schema once', () => {
   try {
     new HistoryStore(file, migrations).close()
     new HistoryStore(file, migrations).close()
-    assert.equal(count(file, '__drizzle_migrations'), 1)
+    assert.equal(count(file, '__drizzle_migrations'), readdirSync(migrations).length)
     assert.equal(count(file, 'conversations'), 0)
     assert.equal(count(file, 'turns'), 0)
   } finally {
+    cleanup()
+  }
+})
+
+test('costs add up per conversation and sources come back as saved', () => {
+  const { file, cleanup } = tempDb()
+  const store = new HistoryStore(file, migrations)
+  try {
+    const sources = [{ url: 'https://example.com/a', title: 'Przykład' }]
+    store.saveTurn('c1', turn(0, 'Kurs euro?', '4,25 zł.', { costUsd: 0.0012, sources }))
+    store.saveTurn('c1', turn(1, 'A dolara?', '3,90 zł.', { costUsd: 0.0008 }))
+    store.saveTurn('c2', turn(0, 'Bez kosztu', 'Odpowiedź.'))
+    const byId = new Map(store.list().map((c) => [c.id, c.costUsd]))
+    assert.ok(Math.abs((byId.get('c1') ?? 0) - 0.002) < 1e-12)
+    assert.equal(byId.get('c2'), null)
+    assert.deepEqual(
+      store.turns('c1').map((t) => t.sources),
+      [sources, null]
+    )
+  } finally {
+    store.close()
     cleanup()
   }
 })
@@ -90,7 +113,13 @@ test('saving turns creates the conversation, keeps its title and bumps updated_a
     store.saveTurn('c1', turn(1, 'A ile ma mieszkańców?', 'Około 470 tysięcy.', { createdAt: 4_000 }))
 
     const [summary] = store.list()
-    assert.deepEqual(summary, { id: 'c1', title: 'Jaka jest stolica Australii?', updatedAt: 5_000, snippet: 'Canberra.' })
+    assert.deepEqual(summary, {
+      id: 'c1',
+      title: 'Jaka jest stolica Australii?',
+      updatedAt: 5_000,
+      costUsd: null,
+      snippet: 'Canberra.'
+    })
     const saved = store.turns('c1')
     assert.deepEqual(
       saved.map((t) => [t.position, t.question, t.chatModel, t.transcriptionMs, t.firstTokenMs]),

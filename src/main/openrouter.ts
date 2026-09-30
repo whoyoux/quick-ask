@@ -1,5 +1,9 @@
 // Minimal OpenRouter client: speech-to-text and streamed chat completions.
 
+import type { Source } from '../shared/types'
+
+export type { Source }
+
 // Overridable for testing against a local mock server.
 const BASE_URL = process.env.QUICK_ASK_API_BASE ?? 'https://openrouter.ai/api/v1'
 
@@ -34,7 +38,40 @@ export interface ChatMessage {
 
 export interface KeyInfo {
   label: string | null
+  /** USD left under the key's own spending limit; null when the key has no limit. */
   limitRemaining: number | null
+  /** USD spent with this key, all time and today (UTC). */
+  usage: number | null
+  usageDaily: number | null
+}
+
+export interface ChatResult {
+  /** USD, from OpenRouter's usage accounting; null if the response didn't include it. */
+  cost: number | null
+}
+
+export interface Transcription {
+  text: string
+  cost: number | null
+}
+
+function costOf(usage: unknown): number | null {
+  const cost = (usage as { cost?: unknown } | null | undefined)?.cost
+  return typeof cost === 'number' && Number.isFinite(cost) ? cost : null
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** `url_citation` annotations come either OpenAI-style (nested) or flat; accept both. */
+function citation(annotation: unknown): Source | null {
+  const a = annotation as { type?: string; url?: unknown; title?: unknown; url_citation?: { url?: unknown; title?: unknown } }
+  if (a?.type !== 'url_citation') return null
+  const url = a.url_citation?.url ?? a.url
+  const title = a.url_citation?.title ?? a.title
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null
+  return { url, title: typeof title === 'string' && title.trim() ? title.trim() : new URL(url).hostname }
 }
 
 function describeStatus(status: number, detail: string): string {
@@ -127,8 +164,15 @@ export async function checkKey(apiKey: string): Promise<KeyInfo> {
   const deadline = new Deadline(KEY_CHECK_TIMEOUT_MS)
   try {
     const response = await request('/key', apiKey, { method: 'GET' }, deadline)
-    const body = await readJson<{ data?: { label?: string; limit_remaining?: number | null } }>(response, deadline)
-    return { label: body.data?.label ?? null, limitRemaining: body.data?.limit_remaining ?? null }
+    const body = await readJson<{
+      data?: { label?: string; limit_remaining?: unknown; usage?: unknown; usage_daily?: unknown }
+    }>(response, deadline)
+    return {
+      label: body.data?.label ?? null,
+      limitRemaining: numberOrNull(body.data?.limit_remaining),
+      usage: numberOrNull(body.data?.usage),
+      usageDaily: numberOrNull(body.data?.usage_daily)
+    }
   } finally {
     deadline.clear()
   }
@@ -141,7 +185,7 @@ export async function transcribe(options: {
   format: string
   language: string | null
   signal?: AbortSignal
-}): Promise<string> {
+}): Promise<Transcription> {
   const body = {
     model: options.model,
     input_audio: { data: options.audio.toString('base64'), format: options.format },
@@ -156,27 +200,80 @@ export async function transcribe(options: {
       { method: 'POST', body: JSON.stringify(body) },
       deadline
     )
-    const result = await readJson<{ text?: string }>(response, deadline)
-    return (result.text ?? '').trim()
+    const result = await readJson<{ text?: string; usage?: unknown }>(response, deadline)
+    return { text: (result.text ?? '').trim(), cost: costOf(result.usage) }
   } finally {
     deadline.clear()
   }
 }
 
-/** Streams a chat completion, calling `onDelta` with each text fragment as it arrives. */
+/** The model can't call tools, so the web search tool has to go. */
+function toolsUnsupported(error: unknown): boolean {
+  return (
+    error instanceof OpenRouterError &&
+    (error.status === 400 || error.status === 404) &&
+    /tool/i.test(error.message)
+  )
+}
+
+/**
+ * Streams a chat completion, calling `onDelta` with each text fragment as it arrives.
+ * With `webSearch`, the model may search the web through OpenRouter's server-side tool;
+ * models that can't use tools answer without it.
+ */
 export async function streamChat(options: {
   apiKey: string
   model: string
   messages: ChatMessage[]
+  webSearch: boolean
   onDelta: (text: string) => void
+  onSource: (source: Source) => void
   signal?: AbortSignal
-}): Promise<void> {
-  const deadline = new Deadline(STREAM_IDLE_TIMEOUT_MS, options.signal)
+}): Promise<ChatResult> {
+  if (!options.webSearch) return streamOnce(options, false)
+  let answered = false
   try {
+    return await streamOnce({ ...options, onDelta: (text) => ((answered = true), options.onDelta(text)) }, true)
+  } catch (error) {
+    if (answered || !toolsUnsupported(error)) throw error
+    return streamOnce(options, false)
+  }
+}
+
+async function streamOnce(
+  options: {
+    apiKey: string
+    model: string
+    messages: ChatMessage[]
+    onDelta: (text: string) => void
+    onSource: (source: Source) => void
+    signal?: AbortSignal
+  },
+  webSearch: boolean
+): Promise<ChatResult> {
+  const deadline = new Deadline(STREAM_IDLE_TIMEOUT_MS, options.signal)
+  const result: ChatResult = { cost: null }
+  const seen = new Set<string>()
+  const addSources = (annotations: unknown): void => {
+    if (!Array.isArray(annotations)) return
+    for (const annotation of annotations) {
+      const source = citation(annotation)
+      if (!source || seen.has(source.url)) continue
+      seen.add(source.url)
+      options.onSource(source)
+    }
+  }
+  try {
+    const body = {
+      model: options.model,
+      messages: options.messages,
+      stream: true,
+      ...(webSearch ? { tools: [{ type: 'openrouter:web_search' }] } : {})
+    }
     const response = await request(
       '/chat/completions',
       options.apiKey,
-      { method: 'POST', body: JSON.stringify({ model: options.model, messages: options.messages, stream: true }) },
+      { method: 'POST', body: JSON.stringify(body) },
       deadline
     )
     if (!response.body) throw new OpenRouterError('OpenRouter zwrócił pustą odpowiedź.')
@@ -191,7 +288,7 @@ export async function streamChat(options: {
       } catch (error) {
         throw deadline.explain(error, CONNECTION_LOST_MESSAGE)
       }
-      if (read.done) return
+      if (read.done) return result
       deadline.touch()
       buffer += decoder.decode(read.value, { stream: true })
 
@@ -202,11 +299,12 @@ export async function streamChat(options: {
         // Lines starting with ':' are keep-alive comments (": OPENROUTER PROCESSING").
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
-        if (data === '[DONE]') return
+        if (data === '[DONE]') return result
 
         let event: {
           error?: { message?: string; code?: number }
-          choices?: { delta?: { content?: string | null } }[]
+          choices?: { delta?: { content?: string | null; annotations?: unknown }; message?: { annotations?: unknown } }[]
+          usage?: unknown
         }
         try {
           event = JSON.parse(data)
@@ -216,7 +314,12 @@ export async function streamChat(options: {
         if (event.error) {
           throw new OpenRouterError(event.error.message ?? 'Model przerwał odpowiedź z błędem.', event.error.code)
         }
-        const delta = event.choices?.[0]?.delta?.content
+        // Usage, with the cost, arrives in the last chunk.
+        result.cost = costOf(event.usage) ?? result.cost
+        const choice = event.choices?.[0]
+        addSources(choice?.delta?.annotations)
+        addSources(choice?.message?.annotations)
+        const delta = choice?.delta?.content
         if (delta) options.onDelta(delta)
       }
     }

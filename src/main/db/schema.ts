@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
-import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import type { Source } from '../../shared/types'
+import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 // Timestamps are epoch milliseconds. After editing this file run `npm run db:generate`.
 
@@ -33,6 +34,10 @@ export const turns = sqliteTable(
     chatModel: text('chat_model').notNull(),
     transcriptionMs: integer('transcription_ms'),
     firstTokenMs: integer('first_token_ms'),
+    /** USD for transcription plus answer, from OpenRouter's usage accounting. */
+    costUsd: real('cost_usd'),
+    /** Pages found by web search, as JSON. */
+    sources: text({ mode: 'json' }).$type<Source[]>(),
     createdAt: integer('created_at').notNull()
   },
   (t) => [

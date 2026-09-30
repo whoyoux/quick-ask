@@ -11,6 +11,12 @@ export interface TurnTiming {
   firstTokenMs: number | null
 }
 
+/** A web page the answer is based on, reported by the web search tool. */
+export interface Source {
+  url: string
+  title: string
+}
+
 export interface Turn {
   id: number
   question: string
@@ -18,6 +24,10 @@ export interface Turn {
   status: TurnStatus
   error: string | null
   timing: TurnTiming
+  /** USD for transcription plus answer; null while unknown. */
+  costUsd: number | null
+  /** Pages found by web search, in the order the model cited them. */
+  sources: Source[]
 }
 
 export interface RecordingIndicator {
@@ -107,6 +117,8 @@ export interface ConversationSummary {
   updatedAt: number
   /** The first answer as one line of plain text. */
   snippet: string
+  /** USD for the whole conversation; null when no turn has a known cost. */
+  costUsd: number | null
 }
 
 export interface HistoryList {
