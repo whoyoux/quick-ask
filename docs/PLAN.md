@@ -65,7 +65,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 
 ### M4: Ustawienia i onboarding
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa
-- [x] T4.3 Polecane modele na górze list: Gemini 3.8 Flash (szybki) i Gemini Pro (myślący, alias `~google/gemini-pro-latest`), Grok STT do transkrypcji (domyślny w nowych instalacjach)
+- [x] T4.3 Domyślne modele na górze list (jedna grupa radio, bez sekcji „Polecane”, która w Windows i Linuksie pokazywała dwa zaznaczone modele): Gemini 3.8 Flash (szybki) i Gemini Pro (myślący, alias `~google/gemini-pro-latest`), Grok STT do transkrypcji (domyślny w nowych instalacjach)
 - [x] T4.9 Wydatki w menu z `GET /api/v1/key`: dziś i łącznie, limit klucza jeśli ustawiony, „Doładuj kredyty…”; saldo całego konta wymaga klucza zarządzającego, więc go nie pokazujemy
 - [x] T4.2 Okno klucza API z testem klucza (`GET /api/v1/key`) i prośbą o Accessibility na macOS
 - [ ] T4.4 Onboarding przy pierwszym uruchomieniu: klucz API, test mikrofonu, uprawnienia

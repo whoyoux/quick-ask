@@ -37,23 +37,24 @@ function pttKeyOptions(): { id: PttKeyId; label: string }[] {
   ]
 }
 
-/** Recommended models first, under a heading; a model set by hand in settings.json stays visible. */
+/**
+ * One radio group: a separator would split it, and Windows and Linux keep one item checked in every group.
+ * A model set by hand in settings.json stays visible.
+ */
 function modelItems(models: ModelOption[], currentId: string, choose: (id: string) => void): MenuItemConstructorOptions[] {
-  const item = (m: ModelOption): MenuItemConstructorOptions => ({
-    label: m.label,
-    type: 'radio',
-    checked: currentId === m.id,
-    click: () => choose(m.id)
-  })
   const custom: MenuItemConstructorOptions[] = models.some((m) => m.id === currentId)
     ? []
-    : [{ label: currentId, type: 'radio', checked: true, enabled: false }, { type: 'separator' }]
+    : [{ label: currentId, type: 'radio', checked: true, enabled: false }]
   return [
     ...custom,
-    { label: 'Polecane', enabled: false },
-    ...models.filter((m) => m.recommended).map(item),
-    { type: 'separator' },
-    ...models.filter((m) => !m.recommended).map(item)
+    ...models.map(
+      (m): MenuItemConstructorOptions => ({
+        label: m.label,
+        type: 'radio',
+        checked: currentId === m.id,
+        click: () => choose(m.id)
+      })
+    )
   ]
 }
 
