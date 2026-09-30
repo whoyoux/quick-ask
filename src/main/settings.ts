@@ -20,6 +20,8 @@ export interface Settings {
   pttKey: PttKeyId
   /** null = default spot, top-center of the screen with the mouse cursor. */
   overlayPosition: OverlayPosition | null
+  /** Save finished questions and answers to the local history database. */
+  saveHistory: boolean
 }
 
 function defaults(): Settings {
@@ -31,7 +33,8 @@ function defaults(): Settings {
     language: systemLanguage.startsWith('pl') ? 'pl' : 'auto',
     answerLength: 'normal',
     pttKey: process.platform === 'darwin' ? 'alt-right' : 'ctrl-right',
-    overlayPosition: null
+    overlayPosition: null,
+    saveHistory: true
   }
 }
 

@@ -7,6 +7,8 @@ files:
   - out/**
   - resources/**
   - package.json
+  # SQL migrations, applied at startup from inside app.asar (the snapshots are only for drizzle-kit).
+  - drizzle/**/migration.sql
 # uiohook-napi ships N-API prebuilds that work on every Electron version; nothing to compile.
 npmRebuild: false
 asarUnpack:

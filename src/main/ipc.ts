@@ -1,9 +1,12 @@
 import { clipboard, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { ExternalLink, KeyCheckResult, RecordingOutcome, SetupStatus } from '../shared/types'
+import type { ExternalLink, HistoryList, KeyCheckResult, RecordingOutcome, SetupStatus } from '../shared/types'
 import type { Controller } from './controller'
+import type { HistoryStore } from './db/history'
+import { closeHistoryWindow, isHistoryWindow } from './history-window'
 import { checkKey, OpenRouterError } from './openrouter'
 import type { OverlayWindow } from './overlay-window'
 import { clearApiKey, getApiKey, maskKey, setApiKey } from './secrets'
+import { settings } from './settings'
 import { closeSettingsWindow, isSettingsWindow } from './settings-window'
 
 const LINKS: Record<ExternalLink, string> = {
@@ -11,17 +14,33 @@ const LINKS: Record<ExternalLink, string> = {
   credits: 'https://openrouter.ai/settings/credits'
 }
 
+const MAX_QUERY_LENGTH = 200
+
 export interface IpcDeps {
   overlay: OverlayWindow
   controller: Controller
+  history: HistoryStore | null
   setupStatus(): SetupStatus
   requestAccessibility(): void
   onKeyChanged(): void
 }
 
-export function registerIpc({ overlay, controller, setupStatus, requestAccessibility, onKeyChanged }: IpcDeps): void {
+/** Conversation ids are UUIDs; anything else never matches a row. */
+function conversationId(value: unknown): string | null {
+  return typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null
+}
+
+export function registerIpc({
+  overlay,
+  controller,
+  history,
+  setupStatus,
+  requestAccessibility,
+  onKeyChanged
+}: IpcDeps): void {
   const fromOverlay = (event: IpcMainEvent): boolean => event.sender === overlay.webContents
   const fromSettings = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => isSettingsWindow(event.sender)
+  const fromHistory = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => isHistoryWindow(event.sender)
 
   // Overlay --------------------------------------------------------------------------------
   ipcMain.on('overlay:recording', (event, outcome: RecordingOutcome) => {
@@ -86,6 +105,39 @@ export function registerIpc({ overlay, controller, setupStatus, requestAccessibi
   })
   ipcMain.on('settings:close', (event) => {
     if (fromSettings(event)) closeSettingsWindow()
+  })
+
+  // History window -------------------------------------------------------------------------
+  ipcMain.handle('history:list', (event, query: unknown): HistoryList => {
+    if (!fromHistory(event)) throw new Error('forbidden')
+    const text = typeof query === 'string' ? query.slice(0, MAX_QUERY_LENGTH) : ''
+    return {
+      available: history !== null,
+      saving: settings.get().saveHistory,
+      conversations: history?.list(text) ?? []
+    }
+  })
+  ipcMain.handle('history:open', (event, id: unknown): boolean => {
+    if (!fromHistory(event)) throw new Error('forbidden')
+    const valid = conversationId(id)
+    if (!valid || !controller.openConversation(valid)) return false
+    closeHistoryWindow()
+    return true
+  })
+  ipcMain.handle('history:delete', (event, id: unknown) => {
+    if (!fromHistory(event)) throw new Error('forbidden')
+    const valid = conversationId(id)
+    if (!valid || !history) return
+    history.delete(valid)
+    controller.conversationDeleted(valid)
+  })
+  ipcMain.handle('history:clear', (event) => {
+    if (!fromHistory(event)) throw new Error('forbidden')
+    history?.clear()
+    controller.conversationDeleted(null)
+  })
+  ipcMain.on('history:close', (event) => {
+    if (fromHistory(event)) closeHistoryWindow()
   })
 }
 
