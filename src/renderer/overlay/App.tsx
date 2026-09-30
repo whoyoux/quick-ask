@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { formatTokens, formatUsd, imageUrl } from '../../shared/format'
+import { formatTokens, formatUsd, imageUrl, TOKENS_HINT } from '../../shared/format'
 import {
   MAX_ATTACHMENTS,
   type DroppedFile,
@@ -185,10 +185,16 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
   const conversationCost = costs.length > 0 ? costs.reduce((sum, c) => sum + c, 0) : null
   const counted = view.turns.filter((t) => t.tokens !== null)
   const conversationTokens =
-    counted.length > 0 ? counted.reduce((sum, t) => sum + (t.tokens?.input ?? 0) + (t.tokens?.output ?? 0), 0) : null
+    counted.length > 0
+      ? counted.reduce(
+          (sum, t) => ({ input: sum.input + (t.tokens?.input ?? 0), output: sum.output + (t.tokens?.output ?? 0) }),
+          { input: 0, output: 0 }
+        )
+      : null
+  // Cost first: in a narrow window the token counts are what gets cut off.
   const summary = [
-    conversationTokens !== null ? formatTokens(conversationTokens) : null,
-    conversationCost !== null ? formatUsd(conversationCost) : null
+    conversationCost !== null ? formatUsd(conversationCost) : null,
+    conversationTokens !== null ? formatTokens(conversationTokens) : null
   ].filter(Boolean)
   const last = view.turns.at(-1)
   const lastAnswer = last?.status === 'done' ? last.answer : ''
@@ -207,7 +213,7 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
         <img src={iconUrl} alt="" className="size-4 shrink-0 rounded-[4px]" />
         <span className="shrink-0 text-xs text-muted-foreground">Quick Ask</span>
         {summary.length > 0 && (
-          <span className="min-w-0 truncate text-xs text-faint tabular-nums" title="Tokeny i koszt tej rozmowy w OpenRouter">
+          <span className="min-w-0 truncate text-xs text-faint tabular-nums" title={`Tokeny i koszt tej rozmowy w OpenRouter. ${TOKENS_HINT}`}>
             · {summary.join(' · ')}
           </span>
         )}
@@ -381,12 +387,10 @@ function Timing({ turn }: { turn: Turn }) {
       timing.transcriptionMs !== null ? `${timing.transcriptionModel} ${seconds(timing.transcriptionMs)} → ${answer}` : answer
     )
   }
-  if (turn.tokens) parts.push(formatTokens(turn.tokens.input + turn.tokens.output))
+  if (turn.tokens) parts.push(formatTokens(turn.tokens))
   if (costUsd !== null) parts.push(formatUsd(costUsd))
   if (parts.length === 0) return null
-  const breakdown = turn.tokens
-    ? `Tokeny: ${turn.tokens.input} wejściowych (pytanie, historia, obrazy), ${turn.tokens.output} wyjściowych`
-    : undefined
+  const breakdown = turn.tokens ? TOKENS_HINT : undefined
   return (
     <p className="mt-2 text-[11px] text-faint tabular-nums" title={breakdown}>
       {parts.join(' · ')}

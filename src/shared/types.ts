@@ -163,7 +163,7 @@ export interface ConversationSummary {
   /** USD for the whole conversation; null when no turn has a known cost. */
   costUsd: number | null
   /** Tokens for the whole conversation; null when no turn has a known count. */
-  tokens: number | null
+  tokens: TokenUsage | null
 }
 
 export interface HistoryList {

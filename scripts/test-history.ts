@@ -95,7 +95,7 @@ test('costs add up per conversation and sources come back as saved', () => {
     store.saveTurn('c1', turn(1, 'A dolara?', '3,90 zł.', { costUsd: 0.0008, inputTokens: 150 }))
     store.saveTurn('c2', turn(0, 'Bez kosztu', 'Odpowiedź.'))
     const byId = new Map(store.list().map((c) => [c.id, c.costUsd]))
-    assert.equal(store.list().find((c) => c.id === 'c1')?.tokens, 270)
+    assert.deepEqual(store.list().find((c) => c.id === 'c1')?.tokens, { input: 250, output: 20 })
     assert.equal(store.list().find((c) => c.id === 'c2')?.tokens, null)
     assert.ok(Math.abs((byId.get('c1') ?? 0) - 0.002) < 1e-12)
     assert.equal(byId.get('c2'), null)
