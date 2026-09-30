@@ -16,6 +16,8 @@ const MIN_VOICED_MS = 250
 /** Even a quiet room with noise suppression stays above this; below it the input is dead. */
 const DEAD_MIC_RMS = 0.0003
 const NOTICE_MS = 2500
+/** The renderer normally hands over the audio within milliseconds of a stop. */
+const STOP_TIMEOUT_MS = 5000
 /** Earlier question/answer pairs sent along with a follow-up. */
 const HISTORY_TURNS = 10
 /** Streaming tokens are batched into one UI update per interval. */
@@ -62,15 +64,24 @@ export class Controller {
   private continuing = false
   private handsFree = false
   private maxTimer: NodeJS.Timeout | null = null
+  private stopTimer: NodeJS.Timeout | null = null
   private noticeTimer: NodeJS.Timeout | null = null
   private renderTimer: NodeJS.Timeout | null = null
   private conversation: AbortController | null = null
+  /**
+   * The conversation a fresh question replaced, kept until that question turns out to be real:
+   * an accidental hold that transcribes to nothing brings it back instead of wiping it.
+   */
+  private displaced: { controller: AbortController | null; turns: Turn[] } | null = null
   private nextTurnId = 1
 
   constructor(
     private readonly overlay: OverlayWindow,
     private readonly hooks: ControllerHooks
-  ) {}
+  ) {
+    overlay.onLoad = () => this.pushView()
+    overlay.onRendererLost = () => this.recorderLost('Nagrywanie przerwane: okno Quick Ask uległo awarii.')
+  }
 
   get isRecording(): boolean {
     return this.recorderPhase === 'recording'
@@ -83,21 +94,33 @@ export class Controller {
   // Push-to-talk ---------------------------------------------------------------------------
 
   keyPressed(): void {
-    if (this.recorderPhase !== 'idle' || !getApiKey() || !micPermissionGranted()) return
+    if (this.recorderPhase !== 'idle' || !this.overlay.loaded || !getApiKey() || !micPermissionGranted()) return
     this.beginRecording(false)
   }
 
   keyHeld(): void {
-    if (!this.ready()) return
+    if (this.ownedByHandsFree()) return
+    if (!this.ready()) {
+      this.cancelRecording()
+      return
+    }
     if (this.recorderPhase === 'arming') this.confirmRecording()
   }
 
   keyReleased(): void {
-    this.finishRecording()
+    if (this.ownedByHandsFree()) return
+    if (this.recorderPhase === 'arming') this.cancelRecording()
+    else this.finishRecording()
   }
 
   keyCancelled(): void {
+    if (this.ownedByHandsFree()) return
     this.cancelRecording()
+  }
+
+  /** A hands-free recording ends from the tray, the panel or `--toggle`; the trigger key leaves it alone. */
+  private ownedByHandsFree(): boolean {
+    return this.handsFree && this.recorderPhase !== 'idle'
   }
 
   // Hands-free: tray item or `quick-ask --toggle` --------------------------------------------
@@ -107,7 +130,7 @@ export class Controller {
       this.finishRecording()
       return
     }
-    if (this.recorderPhase !== 'idle' || !this.ready()) return
+    if (this.recorderPhase !== 'idle' || !this.overlay.loaded || !this.ready()) return
     this.beginRecording(true)
     this.confirmRecording()
   }
@@ -128,6 +151,8 @@ export class Controller {
   }
 
   hide(): void {
+    // Closing the panel mid-question must not leave the microphone on.
+    this.cancelRecording(false)
     this.clearNoticeTimer()
     this.view.mode = 'hidden'
     this.view.notice = null
@@ -139,6 +164,7 @@ export class Controller {
   newConversation(): void {
     this.conversation?.abort()
     this.conversation = null
+    this.dropDisplaced()
     this.view.turns = []
     this.view.notice = null
     this.pushView()
@@ -162,8 +188,9 @@ export class Controller {
 
   handleRecording(outcome: RecordingOutcome): void {
     debug('recording', outcome.ok ? { ...outcome.result, audio: outcome.result.audio.byteLength } : outcome)
-    if (this.recorderPhase !== 'stopping') return // cancelled in the meantime
+    if (this.recorderPhase !== 'stopping') return // cancelled or timed out in the meantime
     this.recorderPhase = 'idle'
+    this.clearStopTimer()
     this.view.recording = null
     if (!outcome.ok) {
       this.showNotice(`Nie mogę nagrać dźwięku: ${outcome.error}`)
@@ -223,9 +250,15 @@ export class Controller {
     this.hooks.onRecordingChange(false)
     // The view keeps showing the recording state until the audio arrives (a few ms).
     this.overlay.recorder({ type: 'stop' })
+    // Without an answer from the renderer the recorder would never accept another question.
+    this.stopTimer = setTimeout(() => {
+      this.stopTimer = null
+      this.overlay.recorder({ type: 'cancel' })
+      this.recorderLost('Nie udało się zakończyć nagrania. Spróbuj ponownie.')
+    }, STOP_TIMEOUT_MS)
   }
 
-  private cancelRecording(): void {
+  private cancelRecording(updateView = true): void {
     if (this.recorderPhase === 'idle' || this.recorderPhase === 'stopping') return
     const wasShown = this.recorderPhase === 'recording'
     this.recorderPhase = 'idle'
@@ -234,12 +267,26 @@ export class Controller {
     if (!wasShown) return
     this.hooks.onRecordingChange(false)
     this.view.recording = null
+    if (!updateView) return
     if (this.continuing) {
       this.view.mode = 'panel'
       this.pushView()
     } else {
       this.hide()
     }
+  }
+
+  /** The renderer can't finish this recording (crashed or stopped answering): start over. */
+  private recorderLost(message: string): void {
+    if (this.recorderPhase === 'idle') return
+    const wasShown = this.recorderPhase !== 'arming'
+    this.recorderPhase = 'idle'
+    this.clearMaxTimer()
+    this.clearStopTimer()
+    if (!wasShown) return
+    this.hooks.onRecordingChange(false)
+    this.view.recording = null
+    this.showNotice(message)
   }
 
   // Asking ---------------------------------------------------------------------------------
@@ -250,7 +297,9 @@ export class Controller {
     const current = settings.get()
 
     if (!continuing || !this.conversation) {
-      this.conversation?.abort()
+      // The previous conversation keeps going in the background until this question is real.
+      this.dropDisplaced()
+      this.displaced = { controller: this.conversation, turns: this.view.turns }
       this.conversation = new AbortController()
       this.view.turns = []
     }
@@ -289,12 +338,15 @@ export class Controller {
       if (signal.aborted) return
       if (isLikelyHallucination(question)) {
         this.view.turns = this.view.turns.filter((t) => t !== turn)
-        // An open panel stays open; only a fresh question falls back to the notice pill.
-        if (!continuing) this.view.mode = 'pill'
+        this.restoreDisplaced()
+        // An open panel stays open; only a fresh question falls back to the notice pill
+        // (the restored conversation is still one click away in the tray).
+        if (!continuing && !this.recordingShown()) this.view.mode = 'pill'
         this.hooks.onConversationChange()
         this.showNotice('Nie usłyszałem pytania.')
         return
       }
+      this.dropDisplaced()
 
       turn.question = question
       turn.status = 'answering'
@@ -321,6 +373,7 @@ export class Controller {
       }
     } catch (error) {
       if (signal.aborted) return
+      this.dropDisplaced()
       turn.status = 'error'
       turn.error =
         error instanceof OpenRouterError
@@ -330,8 +383,26 @@ export class Controller {
     this.pushView()
   }
 
+  /** A question transcribed fine, so the conversation it replaced is gone for good. */
+  private dropDisplaced(): void {
+    this.displaced?.controller?.abort()
+    this.displaced = null
+  }
+
+  /** Brings back the replaced conversation when nothing is left of the new one. */
+  private restoreDisplaced(): void {
+    if (!this.displaced || this.view.turns.length > 0) return
+    this.conversation?.abort()
+    this.conversation = this.displaced.controller
+    this.view.turns = this.displaced.turns
+    this.displaced = null
+  }
+
   private buildMessages(current: Turn): ChatMessage[] {
-    const history = this.view.turns.filter((t) => t !== current && t.status === 'done').slice(-HISTORY_TURNS)
+    // A follow-up asked while the previous answer is still streaming gets what arrived so far.
+    const answered = (t: Turn): boolean =>
+      t.status === 'done' || (t.status === 'answering' && t.answer.trim() !== '')
+    const history = this.view.turns.filter((t) => t !== current && answered(t)).slice(-HISTORY_TURNS)
     return [
       { role: 'system', content: buildSystemPrompt(settings.get()) },
       ...history.flatMap((t): ChatMessage[] => [
@@ -347,20 +418,24 @@ export class Controller {
   private showNotice(text: string): void {
     this.clearNoticeTimer()
     this.view.notice = text
-    this.view.recording = null
     const panelOpen = this.overlay.visible && this.view.mode === 'panel'
-    if (!panelOpen) this.view.mode = 'pill'
+    // A notice from an earlier question must not replace a recording in progress.
+    if (!panelOpen && !this.recordingShown()) this.view.mode = 'pill'
     this.pushView()
     this.overlay.show()
     this.noticeTimer = setTimeout(() => {
       this.noticeTimer = null
-      if (this.view.mode === 'pill') {
+      if (this.view.mode === 'pill' && !this.recordingShown()) {
         this.hide()
       } else {
         this.view.notice = null
         this.pushView()
       }
     }, NOTICE_MS)
+  }
+
+  private recordingShown(): boolean {
+    return this.view.recording !== null
   }
 
   private scheduleRender(): void {
@@ -383,6 +458,11 @@ export class Controller {
   private clearMaxTimer(): void {
     if (this.maxTimer) clearTimeout(this.maxTimer)
     this.maxTimer = null
+  }
+
+  private clearStopTimer(): void {
+    if (this.stopTimer) clearTimeout(this.stopTimer)
+    this.stopTimer = null
   }
 
   private clearNoticeTimer(): void {
