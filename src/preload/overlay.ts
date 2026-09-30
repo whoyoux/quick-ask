@@ -17,7 +17,14 @@ const api: OverlayApi = {
   newConversation: () => ipcRenderer.send('overlay:new-conversation'),
   copy: (text) => ipcRenderer.send('overlay:copy', text),
   sendNow: () => ipcRenderer.send('overlay:send-now'),
-  cancelRecording: () => ipcRenderer.send('overlay:cancel-recording')
+  cancelRecording: () => ipcRenderer.send('overlay:cancel-recording'),
+  attachClipboard: () => ipcRenderer.send('overlay:attach-clipboard'),
+  attachFiles: () => ipcRenderer.send('overlay:attach-files'),
+  attachDropped: (files) => ipcRenderer.send('overlay:attach-dropped', files),
+  removeAttachment: (name) => ipcRenderer.send('overlay:remove-attachment', name),
+  copyImage: (name) => ipcRenderer.send('overlay:copy-image', name),
+  saveImage: (name) => ipcRenderer.send('overlay:save-image', name),
+  openImage: (name) => ipcRenderer.send('overlay:open-image', name)
 }
 
 contextBridge.exposeInMainWorld('quickAsk', api)

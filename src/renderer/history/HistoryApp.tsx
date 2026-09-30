@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { formatUsd } from '../../shared/format'
+import { formatTokens, formatUsd } from '../../shared/format'
 import type { ConversationSummary, HistoryList } from '../../shared/types'
 
 const api = window.quickAsk
@@ -216,8 +216,15 @@ function Row({
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 rounded-lg px-3 py-2 text-left">
         <span className="flex items-baseline gap-3">
           <span className="min-w-0 flex-1 truncate font-medium">{conversation.title}</span>
-          {conversation.costUsd !== null && (
-            <span className="shrink-0 text-xs text-faint tabular-nums">{formatUsd(conversation.costUsd)}</span>
+          {(conversation.tokens !== null || conversation.costUsd !== null) && (
+            <span className="shrink-0 text-xs text-faint tabular-nums">
+              {[
+                conversation.tokens !== null ? formatTokens(conversation.tokens) : null,
+                conversation.costUsd !== null ? formatUsd(conversation.costUsd) : null
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           )}
           <span className="shrink-0 text-xs text-faint tabular-nums">{timeFormat.format(conversation.updatedAt)}</span>
         </span>

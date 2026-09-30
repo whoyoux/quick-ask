@@ -63,6 +63,10 @@ export class HistoryStore {
     const costUsd = sql<number | null>`(
       select sum(t.cost_usd) from turns t where t.conversation_id = conversations.id
     )`
+    const tokens = sql<number | null>`(
+      select sum(coalesce(t.input_tokens, 0) + coalesce(t.output_tokens, 0)) from turns t
+      where t.conversation_id = conversations.id and (t.input_tokens is not null or t.output_tokens is not null)
+    )`
     const needle = query.trim().toLowerCase()
     const pattern = `%${needle.replace(/[\\%_]/g, '\\$&')}%`
     const matching = this.db
@@ -75,6 +79,7 @@ export class HistoryStore {
         title: conversations.title,
         updatedAt: conversations.updatedAt,
         costUsd,
+        tokens,
         firstAnswer
       })
       .from(conversations)
@@ -95,12 +100,28 @@ export class HistoryStore {
       .all()
   }
 
-  delete(conversationId: string): void {
+  /** Deletes the conversation and returns the picture files it used, for the caller to remove. */
+  delete(conversationId: string): string[] {
+    const files = this.imageFiles(conversationId)
     this.db.delete(conversations).where(eq(conversations.id, conversationId)).run()
+    return files
   }
 
-  clear(): void {
+  /** Deletes every conversation and returns the picture files they used. */
+  clear(): string[] {
+    const files = this.imageFiles()
     this.db.delete(conversations).run()
+    return files
+  }
+
+  /** Picture files referenced by one conversation, or by all of them. */
+  imageFiles(conversationId?: string): string[] {
+    const rows = this.db
+      .select({ attachments: turns.attachments, images: turns.images })
+      .from(turns)
+      .where(conversationId === undefined ? undefined : eq(turns.conversationId, conversationId))
+      .all()
+    return rows.flatMap((row) => [...(row.attachments ?? []), ...(row.images ?? [])])
   }
 
   close(): void {

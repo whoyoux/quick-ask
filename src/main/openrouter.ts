@@ -1,8 +1,8 @@
 // Minimal OpenRouter client: speech-to-text and streamed chat completions.
 
-import type { Source } from '../shared/types'
+import type { Source, TokenUsage } from '../shared/types'
 
-export type { Source }
+export type { Source, TokenUsage }
 
 // Overridable for testing against a local mock server.
 const BASE_URL = process.env.QUICK_ASK_API_BASE ?? 'https://openrouter.ai/api/v1'
@@ -20,6 +20,8 @@ const TRANSCRIPTION_TIMEOUT_MS = 45_000
 /** No bytes for this long ends a stream; OpenRouter sends keep-alive comments while a model thinks. */
 const STREAM_IDLE_TIMEOUT_MS = 30_000
 const KEY_CHECK_TIMEOUT_MS = 15_000
+/** Image models take a while, especially the high-quality ones. */
+const IMAGE_TIMEOUT_MS = 180_000
 
 export class OpenRouterError extends Error {
   constructor(
@@ -31,9 +33,24 @@ export class OpenRouterError extends Error {
   }
 }
 
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | ContentPart[]
+}
+
+/** A function the model may call; we run it ourselves. */
+export interface FunctionTool {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface ToolCall {
+  name: string
+  /** JSON text, as the model wrote it. */
+  arguments: string
 }
 
 export interface KeyInfo {
@@ -48,11 +65,33 @@ export interface KeyInfo {
 export interface ChatResult {
   /** USD, from OpenRouter's usage accounting; null if the response didn't include it. */
   cost: number | null
+  tokens: TokenUsage | null
+  toolCalls: ToolCall[]
 }
 
 export interface Transcription {
   text: string
   cost: number | null
+  tokens: TokenUsage | null
+}
+
+export interface GeneratedImage {
+  data: Buffer
+  mimeType: string
+}
+
+export interface ImageResult {
+  images: GeneratedImage[]
+  cost: number | null
+  tokens: TokenUsage | null
+}
+
+/** Chat completions report prompt/completion tokens, the audio and image APIs input/output tokens. */
+function tokensOf(usage: unknown): TokenUsage | null {
+  const u = usage as Record<string, unknown> | null | undefined
+  const input = numberOrNull(u?.prompt_tokens) ?? numberOrNull(u?.input_tokens)
+  const output = numberOrNull(u?.completion_tokens) ?? numberOrNull(u?.output_tokens)
+  return input === null && output === null ? null : { input: input ?? 0, output: output ?? 0 }
 }
 
 function costOf(usage: unknown): number | null {
@@ -201,13 +240,13 @@ export async function transcribe(options: {
       deadline
     )
     const result = await readJson<{ text?: string; usage?: unknown }>(response, deadline)
-    return { text: (result.text ?? '').trim(), cost: costOf(result.usage) }
+    return { text: (result.text ?? '').trim(), cost: costOf(result.usage), tokens: tokensOf(result.usage) }
   } finally {
     deadline.clear()
   }
 }
 
-/** The model can't call tools, so the web search tool has to go. */
+/** The model can't call tools, so the tools have to go. */
 function toolsUnsupported(error: unknown): boolean {
   return (
     error instanceof OpenRouterError &&
@@ -216,21 +255,26 @@ function toolsUnsupported(error: unknown): boolean {
   )
 }
 
-/**
- * Streams a chat completion, calling `onDelta` with each text fragment as it arrives.
- * With `webSearch`, the model may search the web through OpenRouter's server-side tool;
- * models that can't use tools answer without it.
- */
-export async function streamChat(options: {
+interface ChatOptions {
   apiKey: string
   model: string
   messages: ChatMessage[]
+  /** OpenRouter's server-side web search. */
   webSearch: boolean
+  /** Functions the model may call; the calls come back in the result. */
+  functions: FunctionTool[]
   onDelta: (text: string) => void
   onSource: (source: Source) => void
   signal?: AbortSignal
-}): Promise<ChatResult> {
-  if (!options.webSearch) return streamOnce(options, false)
+}
+
+/**
+ * Streams a chat completion, calling `onDelta` with each text fragment as it arrives.
+ * Models that can't use tools answer without web search and functions.
+ */
+export async function streamChat(options: ChatOptions): Promise<ChatResult> {
+  const withTools = options.webSearch || options.functions.length > 0
+  if (!withTools) return streamOnce(options, false)
   let answered = false
   try {
     return await streamOnce({ ...options, onDelta: (text) => ((answered = true), options.onDelta(text)) }, true)
@@ -240,19 +284,11 @@ export async function streamChat(options: {
   }
 }
 
-async function streamOnce(
-  options: {
-    apiKey: string
-    model: string
-    messages: ChatMessage[]
-    onDelta: (text: string) => void
-    onSource: (source: Source) => void
-    signal?: AbortSignal
-  },
-  webSearch: boolean
-): Promise<ChatResult> {
+async function streamOnce(options: ChatOptions, withTools: boolean): Promise<ChatResult> {
   const deadline = new Deadline(STREAM_IDLE_TIMEOUT_MS, options.signal)
-  const result: ChatResult = { cost: null }
+  const result: ChatResult = { cost: null, tokens: null, toolCalls: [] }
+  // Tool calls stream in pieces, keyed by index.
+  const calls = new Map<number, ToolCall>()
   const seen = new Set<string>()
   const addSources = (annotations: unknown): void => {
     if (!Array.isArray(annotations)) return
@@ -263,12 +299,22 @@ async function streamOnce(
       options.onSource(source)
     }
   }
+  const finish = (): ChatResult => {
+    result.toolCalls = [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call)
+    return result
+  }
+  const tools = withTools
+    ? [
+        ...(options.webSearch ? [{ type: 'openrouter:web_search' }] : []),
+        ...options.functions.map((f) => ({ type: 'function', function: f }))
+      ]
+    : []
   try {
     const body = {
       model: options.model,
       messages: options.messages,
       stream: true,
-      ...(webSearch ? { tools: [{ type: 'openrouter:web_search' }] } : {})
+      ...(tools.length > 0 ? { tools } : {})
     }
     const response = await request(
       '/chat/completions',
@@ -288,7 +334,7 @@ async function streamOnce(
       } catch (error) {
         throw deadline.explain(error, CONNECTION_LOST_MESSAGE)
       }
-      if (read.done) return result
+      if (read.done) return finish()
       deadline.touch()
       buffer += decoder.decode(read.value, { stream: true })
 
@@ -299,11 +345,18 @@ async function streamOnce(
         // Lines starting with ':' are keep-alive comments (": OPENROUTER PROCESSING").
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
-        if (data === '[DONE]') return result
+        if (data === '[DONE]') return finish()
 
         let event: {
           error?: { message?: string; code?: number }
-          choices?: { delta?: { content?: string | null; annotations?: unknown }; message?: { annotations?: unknown } }[]
+          choices?: {
+            delta?: {
+              content?: string | null
+              annotations?: unknown
+              tool_calls?: { index?: number; function?: { name?: string; arguments?: string } }[]
+            }
+            message?: { annotations?: unknown }
+          }[]
           usage?: unknown
         }
         try {
@@ -316,13 +369,56 @@ async function streamOnce(
         }
         // Usage, with the cost, arrives in the last chunk.
         result.cost = costOf(event.usage) ?? result.cost
+        result.tokens = tokensOf(event.usage) ?? result.tokens
         const choice = event.choices?.[0]
         addSources(choice?.delta?.annotations)
         addSources(choice?.message?.annotations)
+        for (const part of choice?.delta?.tool_calls ?? []) {
+          const index = part.index ?? 0
+          const call = calls.get(index) ?? { name: '', arguments: '' }
+          call.name += part.function?.name ?? ''
+          call.arguments += part.function?.arguments ?? ''
+          calls.set(index, call)
+        }
         const delta = choice?.delta?.content
         if (delta) options.onDelta(delta)
       }
     }
+  } finally {
+    deadline.clear()
+  }
+}
+
+/** Generates (or, with references, edits) a picture through OpenRouter's Image API. */
+export async function generateImage(options: {
+  apiKey: string
+  model: string
+  prompt: string
+  aspectRatio: string | null
+  /** Data URLs of pictures to work from. */
+  references: string[]
+  signal?: AbortSignal
+}): Promise<ImageResult> {
+  const body = {
+    model: options.model,
+    prompt: options.prompt,
+    ...(options.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+    ...(options.references.length > 0
+      ? { input_references: options.references.map((url) => ({ type: 'image_url', image_url: { url } })) }
+      : {})
+  }
+  const deadline = new Deadline(IMAGE_TIMEOUT_MS, options.signal)
+  try {
+    const response = await request('/images', options.apiKey, { method: 'POST', body: JSON.stringify(body) }, deadline)
+    const result = await readJson<{ data?: { b64_json?: string; media_type?: string }[]; usage?: unknown }>(
+      response,
+      deadline
+    )
+    const images = (result.data ?? [])
+      .filter((item) => typeof item.b64_json === 'string' && item.b64_json.length > 0)
+      .map((item) => ({ data: Buffer.from(item.b64_json as string, 'base64'), mimeType: item.media_type ?? 'image/png' }))
+    if (images.length === 0) throw new OpenRouterError('Model obrazów nie zwrócił obrazu. Spróbuj opisać go inaczej.')
+    return { images, cost: costOf(result.usage), tokens: tokensOf(result.usage) }
   } finally {
     deadline.clear()
   }

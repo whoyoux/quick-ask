@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { formatUsd } from '../shared/format'
 import type { Microphone } from '../shared/types'
-import { CHAT_MODELS, TRANSCRIPTION_MODELS, type ModelOption } from './models'
+import { CHAT_MODELS, IMAGE_MODELS, TRANSCRIPTION_MODELS, type ModelOption } from './models'
 import type { KeyInfo } from './openrouter'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
 import { settings, type AnswerLength, type Language, type Settings } from './settings'
@@ -129,6 +129,8 @@ export interface TrayState {
 
 export interface TrayActions {
   toggleHandsFree(): void
+  attachClipboard(): void
+  attachFiles(): void
   showLastConversation(): void
   openHistory(): void
   openSettings(): void
@@ -198,6 +200,8 @@ export class TrayMenu {
         enabled: state.hasConversation,
         click: () => this.actions.showLastConversation()
       },
+      { label: 'Dołącz obraz ze schowka', enabled: state.hasKey, click: () => this.actions.attachClipboard() },
+      { label: 'Dołącz obrazy z dysku…', enabled: state.hasKey, click: () => this.actions.attachFiles() },
       { label: 'Historia rozmów…', click: () => this.actions.openHistory() },
       { type: 'separator' },
       ...(state.hasKey ? balanceItems(this.balance) : []),
@@ -211,6 +215,10 @@ export class TrayMenu {
         submenu: modelItems(TRANSCRIPTION_MODELS, current.transcriptionModel, (id) =>
           settings.update({ transcriptionModel: id })
         )
+      },
+      {
+        label: 'Model obrazów',
+        submenu: modelItems(IMAGE_MODELS, current.imageModel, (id) => settings.update({ imageModel: id }))
       },
       {
         label: 'Język',

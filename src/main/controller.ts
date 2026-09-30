@@ -1,10 +1,20 @@
 import { systemPreferences } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { OverlayView, RecordingOutcome, Turn } from '../shared/types'
+import { MAX_ATTACHMENTS, type ImageName, type OverlayView, type RecordingOutcome, type TokenUsage, type Turn } from '../shared/types'
 import type { HistoryStore, TurnRecord } from './db/history'
 import { debug } from './debug'
+import { deleteImages, ImageError, imageDataUrl, storeImage } from './images'
 import { modelName } from './models'
-import { OpenRouterError, streamChat, transcribe, type ChatMessage } from './openrouter'
+import {
+  generateImage,
+  OpenRouterError,
+  streamChat,
+  transcribe,
+  type ChatMessage,
+  type ContentPart,
+  type FunctionTool,
+  type ToolCall
+} from './openrouter'
 import type { OverlayWindow } from './overlay-window'
 import { buildSystemPrompt } from './prompt'
 import { getApiKey } from './secrets'
@@ -26,6 +36,45 @@ const HISTORY_TURNS = 10
 const RENDER_INTERVAL_MS = 40
 
 type RecorderPhase = 'idle' | 'arming' | 'recording' | 'stopping'
+
+const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']
+
+/** The chat model calls this to make a picture; the image model in the tray menu draws it. */
+const IMAGE_TOOL: FunctionTool = {
+  name: 'generate_image',
+  description:
+    'Creates a picture with an image generation model and shows it to the user. Use only when the user asks for an image, drawing, photo, illustration, logo, or to change pictures.',
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description:
+          'Detailed description of the picture in English: subject, style, composition, lighting, and any text to render verbatim. When editing, describe the change.'
+      },
+      reference: {
+        type: 'string',
+        enum: ['attached', 'previous', 'none'],
+        description:
+          '"attached": work from the pictures the user attached to this question. "previous": change the last picture you generated in this conversation. "none": a new picture.'
+      },
+      aspect_ratio: { type: 'string', enum: ASPECT_RATIOS }
+    },
+    required: ['prompt', 'reference']
+  }
+}
+
+function addUsage(turn: Turn, cost: number | null, tokens: TokenUsage | null): void {
+  if (cost !== null) turn.costUsd = (turn.costUsd ?? 0) + cost
+  if (tokens) {
+    turn.tokens = { input: (turn.tokens?.input ?? 0) + tokens.input, output: (turn.tokens?.output ?? 0) + tokens.output }
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof OpenRouterError || error instanceof ImageError) return error.message
+  return `Coś poszło nie tak: ${error instanceof Error ? error.message : String(error)}`
+}
 
 interface Conversation {
   /** Its row in the history database. */
@@ -78,7 +127,8 @@ export class Controller {
     recording: null,
     notice: null,
     turns: [],
-    hint: ''
+    hint: '',
+    attachments: []
   }
   private recorderPhase: RecorderPhase = 'idle'
   private continuing = false
@@ -175,11 +225,63 @@ export class Controller {
   hide(): void {
     // Closing the panel mid-question must not leave the microphone on.
     this.cancelRecording(false)
+    // Pictures waiting for a question would otherwise ride along with some later one.
+    this.clearAttachments()
     this.clearNoticeTimer()
     this.view.mode = 'hidden'
     this.view.notice = null
     this.overlay.hide()
     this.pushView()
+  }
+
+  // Attachments ----------------------------------------------------------------------------
+
+  /** Adds pictures for the next question and opens the panel to show them. */
+  async attach(load: (room: number) => Promise<ImageName[]> | ImageName[]): Promise<void> {
+    const room = MAX_ATTACHMENTS - this.view.attachments.length
+    if (room <= 0) {
+      this.showPanelNotice(`Do jednego pytania można dołączyć najwyżej ${MAX_ATTACHMENTS} obrazy.`)
+      return
+    }
+    let names: ImageName[]
+    try {
+      names = await load(room)
+    } catch (error) {
+      this.showPanelNotice(describeError(error))
+      return
+    }
+    if (names.length === 0) return
+    const kept = names.slice(0, MAX_ATTACHMENTS - this.view.attachments.length)
+    deleteImages(names.slice(kept.length))
+    this.view.attachments = [...this.view.attachments, ...kept]
+    if (kept.length < names.length) {
+      this.showPanelNotice(`Dołączyłem ${kept.length} z ${names.length}: najwyżej ${MAX_ATTACHMENTS} obrazy na pytanie.`)
+    } else {
+      this.showPanel()
+    }
+  }
+
+  removeAttachment(name: ImageName): void {
+    if (!this.view.attachments.includes(name)) return
+    this.view.attachments = this.view.attachments.filter((n) => n !== name)
+    deleteImages([name])
+    this.pushView()
+  }
+
+  private clearAttachments(): void {
+    deleteImages(this.view.attachments)
+    this.view.attachments = []
+  }
+
+  private showPanel(): void {
+    this.view.mode = 'panel'
+    this.pushView()
+    this.overlay.show()
+  }
+
+  private showPanelNotice(text: string): void {
+    this.showPanel()
+    this.showNotice(text)
   }
 
   /** Clears the thread but keeps the panel open for the next question. */
@@ -223,7 +325,11 @@ export class Controller {
           firstTokenMs: t.firstTokenMs
         },
         costUsd: t.costUsd,
-        sources: t.sources ?? []
+        tokens: t.inputTokens === null && t.outputTokens === null ? null : { input: t.inputTokens ?? 0, output: t.outputTokens ?? 0 },
+        sources: t.sources ?? [],
+        attachments: t.attachments ?? [],
+        images: t.images ?? [],
+        generatingImage: false
       })
     )
     this.clearNoticeTimer()
@@ -241,6 +347,11 @@ export class Controller {
     // One set aside by a question still being transcribed must not come back either.
     if (matches(this.displaced?.conversation)) this.dropDisplaced()
     if (matches(this.conversation)) this.newConversation()
+  }
+
+  /** A short message in the overlay, e.g. a picture that couldn't be saved. */
+  notify(text: string): void {
+    this.showNotice(text)
   }
 
   /** Re-send the view, e.g. after the hint changed with the settings. */
@@ -371,6 +482,8 @@ export class Controller {
     const { signal } = conversation.requests
     const position = conversation.nextPosition++
     const askedAt = Date.now()
+    // Pictures in the panel when the question was asked; they move into the turn once it's real.
+    const attached = [...this.view.attachments]
     const turn: Turn = {
       id: this.nextTurnId++,
       question: '',
@@ -384,7 +497,11 @@ export class Controller {
         firstTokenMs: null
       },
       costUsd: null,
-      sources: []
+      tokens: null,
+      sources: [],
+      attachments: [],
+      images: [],
+      generatingImage: false
     }
     this.view.turns.push(turn)
     this.view.mode = 'panel'
@@ -404,7 +521,7 @@ export class Controller {
         signal
       })
       turn.timing.transcriptionMs = performance.now() - transcriptionStart
-      turn.costUsd = transcription.cost
+      addUsage(turn, transcription.cost, transcription.tokens)
       this.hooks.onSpend()
       const question = transcription.text
       if (signal.aborted) return
@@ -420,6 +537,9 @@ export class Controller {
       }
       this.dropDisplaced()
 
+      // The pictures waiting in the panel go with this question.
+      turn.attachments = attached.filter((name) => this.view.attachments.includes(name))
+      this.view.attachments = this.view.attachments.filter((name) => !turn.attachments.includes(name))
       turn.question = question
       turn.status = 'answering'
       this.pushView()
@@ -430,6 +550,7 @@ export class Controller {
         model: current.chatModel,
         messages: this.buildMessages(turn),
         webSearch: current.webSearch,
+        functions: [IMAGE_TOOL],
         signal,
         onDelta: (text) => {
           turn.timing.firstTokenMs ??= performance.now() - answerStart
@@ -441,10 +562,13 @@ export class Controller {
           this.scheduleRender()
         }
       })
-      if (chat.cost !== null) turn.costUsd = (turn.costUsd ?? 0) + chat.cost
+      addUsage(turn, chat.cost, chat.tokens)
       this.hooks.onSpend()
-      debug('timing', turn.timing, 'cost', turn.costUsd)
-      if (turn.answer.trim()) {
+      debug('timing', turn.timing, 'cost', turn.costUsd, 'tokens', turn.tokens)
+      const imageCall = chat.toolCalls.find((call) => call.name === IMAGE_TOOL.name)
+      if (imageCall) await this.drawImage(turn, imageCall, apiKey, current.imageModel, signal)
+      if (signal.aborted) return
+      if (turn.answer.trim() || turn.images.length > 0) {
         turn.status = 'done'
       } else {
         turn.status = 'error'
@@ -456,10 +580,7 @@ export class Controller {
       // A request that failed half-way may still have been billed.
       if (turn.status === 'answering') this.hooks.onSpend()
       turn.status = 'error'
-      turn.error =
-        error instanceof OpenRouterError
-          ? error.message
-          : `Coś poszło nie tak: ${error instanceof Error ? error.message : String(error)}`
+      turn.error = describeError(error)
     }
     this.pushView()
     this.save(conversation.id, {
@@ -474,6 +595,10 @@ export class Controller {
       firstTokenMs: roundMs(turn.timing.firstTokenMs),
       costUsd: turn.costUsd,
       sources: turn.sources.length > 0 ? turn.sources : null,
+      inputTokens: turn.tokens?.input ?? null,
+      outputTokens: turn.tokens?.output ?? null,
+      attachments: turn.attachments.length > 0 ? turn.attachments : null,
+      images: turn.images.length > 0 ? turn.images : null,
       createdAt: askedAt
     })
   }
@@ -486,6 +611,53 @@ export class Controller {
       this.hooks.onHistoryChange()
     } catch (error) {
       console.error('[quick-ask] could not save the turn to history:', error)
+    }
+  }
+
+  /** Runs the model's generate_image call with the image model chosen in the tray. */
+  private async drawImage(
+    turn: Turn,
+    call: ToolCall,
+    apiKey: string,
+    model: string,
+    signal: AbortSignal
+  ): Promise<void> {
+    let args: { prompt?: unknown; reference?: unknown; aspect_ratio?: unknown }
+    try {
+      args = JSON.parse(call.arguments || '{}')
+    } catch {
+      throw new OpenRouterError('Model źle opisał obraz do narysowania. Spróbuj ponownie.')
+    }
+    const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+    if (!prompt) throw new OpenRouterError('Model nie opisał obrazu do narysowania. Spróbuj ponownie.')
+    const previous = this.view.turns.filter((t) => t !== turn && t.images.length > 0).at(-1)
+    const references =
+      args.reference === 'previous' && previous
+        ? previous.images.slice(-1)
+        : args.reference === 'none'
+          ? []
+          : turn.attachments
+    const aspectRatio =
+      typeof args.aspect_ratio === 'string' && ASPECT_RATIOS.includes(args.aspect_ratio) ? args.aspect_ratio : null
+    debug('generate_image', { prompt, reference: args.reference, aspectRatio, references: references.length })
+
+    turn.generatingImage = true
+    this.pushView()
+    try {
+      const result = await generateImage({
+        apiKey,
+        model,
+        prompt,
+        aspectRatio,
+        references: references.map(imageDataUrl),
+        signal
+      })
+      if (signal.aborted) return
+      turn.images.push(...result.images.map((image) => storeImage(image.data, image.mimeType)))
+      addUsage(turn, result.cost, result.tokens)
+    } finally {
+      turn.generatingImage = false
+      this.hooks.onSpend()
     }
   }
 
@@ -507,15 +679,30 @@ export class Controller {
   private buildMessages(current: Turn): ChatMessage[] {
     // A follow-up asked while the previous answer is still streaming gets what arrived so far.
     const answered = (t: Turn): boolean =>
-      t.status === 'done' || (t.status === 'answering' && t.answer.trim() !== '')
+      t.status === 'done' || (t.status === 'answering' && (t.answer.trim() !== '' || t.images.length > 0))
     const history = this.view.turns.filter((t) => t !== current && answered(t)).slice(-HISTORY_TURNS)
+    const userMessage = (t: Turn): ChatMessage =>
+      t.attachments.length === 0
+        ? { role: 'user', content: t.question }
+        : {
+            role: 'user',
+            content: [
+              { type: 'text', text: t.question },
+              ...t.attachments.map((name): ContentPart => ({ type: 'image_url', image_url: { url: imageDataUrl(name) } }))
+            ]
+          }
     return [
       { role: 'system', content: buildSystemPrompt(settings.get()) },
       ...history.flatMap((t): ChatMessage[] => [
-        { role: 'user', content: t.question },
-        { role: 'assistant', content: t.answer }
+        userMessage(t),
+        {
+          role: 'assistant',
+          content: [t.answer, t.images.length > 0 ? '[Wygenerowany obraz został pokazany użytkownikowi.]' : '']
+            .filter(Boolean)
+            .join('\n\n')
+        }
       ]),
-      { role: 'user', content: current.question }
+      userMessage(current)
     ]
   }
 

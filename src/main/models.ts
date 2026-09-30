@@ -39,6 +39,20 @@ export const TRANSCRIPTION_MODELS: ModelOption[] = [
   { id: 'mistralai/voxtral-mini-transcribe', name: 'Voxtral Mini', label: 'Voxtral Mini Transcribe' }
 ]
 
+/** Models of OpenRouter's Image API (GET /api/v1/images/models); all of them can also edit pictures. */
+export const IMAGE_MODELS: ModelOption[] = [
+  {
+    id: 'google/gemini-3.1-flash-image',
+    name: 'Nano Banana 2',
+    label: 'Nano Banana 2 (Gemini 3.1 Flash Image)',
+    recommended: true
+  },
+  { id: 'openai/gpt-image-2', name: 'GPT Image 2', label: 'GPT Image 2 (OpenAI, drogi)' },
+  { id: 'bytedance-seed/seedream-4.5', name: 'Seedream 4.5', label: 'Seedream 4.5 (ByteDance)' },
+  { id: 'black-forest-labs/flux.2-pro', name: 'FLUX.2 Pro', label: 'FLUX.2 Pro (Black Forest Labs)' }
+]
+
+export const DEFAULT_IMAGE_MODEL = 'google/gemini-3.1-flash-image'
 export const DEFAULT_CHAT_MODEL = 'google/gemini-3.8-flash'
 export const DEFAULT_TRANSCRIPTION_MODEL = 'x-ai/grok-stt-1.0'
 
@@ -48,5 +62,5 @@ export const RENAMED_MODELS: Record<string, string> = {
 }
 
 export function modelName(id: string): string {
-  return [...CHAT_MODELS, ...TRANSCRIPTION_MODELS].find((m) => m.id === id)?.name ?? id.split('/').pop() ?? id
+  return [...CHAT_MODELS, ...TRANSCRIPTION_MODELS, ...IMAGE_MODELS].find((m) => m.id === id)?.name ?? id.split('/').pop() ?? id
 }

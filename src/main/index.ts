@@ -1,10 +1,11 @@
 import { app, session, systemPreferences, type WebContents } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { SetupStatus } from '../shared/types'
+import { MAX_ATTACHMENTS, type SetupStatus } from '../shared/types'
 import { Controller } from './controller'
 import { HistoryStore } from './db/history'
 import { notifyHistoryWindow, openHistoryWindow } from './history-window'
+import { handleImageProtocol, importClipboardImages, pickImageFiles, registerImageScheme, sweepImages } from './images'
 import { maskedKey, registerIpc } from './ipc'
 import { checkKey } from './openrouter'
 import { OverlayWindow } from './overlay-window'
@@ -59,6 +60,9 @@ function main(): void {
 
   const pttLabel = (): string => PTT_KEYS[settings.get().pttKey].label
   const history = openHistory()
+  handleImageProtocol()
+  // Pictures of unsaved conversations and never-sent attachments from earlier runs.
+  sweepImages(new Set(history?.imageFiles() ?? []))
 
   const controller = new Controller(
     overlay,
@@ -144,6 +148,8 @@ function main(): void {
   tray = new TrayMenu(
     {
       toggleHandsFree: () => controller.toggleHandsFree(),
+      attachClipboard: () => void controller.attach((room) => importClipboardImages(room)),
+      attachFiles: () => void controller.attach(() => pickImageFiles(MAX_ATTACHMENTS)),
       showLastConversation: () => controller.showLastConversation(),
       openHistory: openHistoryWindow,
       openSettings: openSettingsWindow,
@@ -202,6 +208,9 @@ function main(): void {
 
   if (!getApiKey()) openSettingsWindow()
 }
+
+// The overlay shows pictures through qa-image:; schemes must be registered before the app is ready.
+registerImageScheme()
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()

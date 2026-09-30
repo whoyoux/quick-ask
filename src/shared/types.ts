@@ -17,6 +17,19 @@ export interface Source {
   title: string
 }
 
+export interface TokenUsage {
+  /** Prompt tokens, including the transcribed audio and attached images. */
+  input: number
+  /** Answer tokens, including reasoning. */
+  output: number
+}
+
+/**
+ * A picture the user attached or a model generated, stored as a file in the app's images
+ * folder and shown through the `qa-image:` protocol. `name` is the file name.
+ */
+export type ImageName = string
+
 export interface Turn {
   id: number
   question: string
@@ -26,8 +39,16 @@ export interface Turn {
   timing: TurnTiming
   /** USD for transcription plus answer; null while unknown. */
   costUsd: number | null
+  /** Tokens for transcription, answer and image generation; null while unknown. */
+  tokens: TokenUsage | null
   /** Pages found by web search, in the order the model cited them. */
   sources: Source[]
+  /** Pictures sent along with the question. */
+  attachments: ImageName[]
+  /** Pictures the image model made for this answer. */
+  images: ImageName[]
+  /** An image is being generated (shown as a placeholder). */
+  generatingImage: boolean
 }
 
 export interface RecordingIndicator {
@@ -45,6 +66,18 @@ export interface OverlayView {
   turns: Turn[]
   /** Footer hint, e.g. how to ask a follow-up. */
   hint: string
+  /** Pictures waiting to go with the next question. */
+  attachments: ImageName[]
+}
+
+/** At most this many pictures go with one question. */
+export const MAX_ATTACHMENTS = 3
+
+/** A file dropped onto the panel, read by the renderer. */
+export interface DroppedFile {
+  name: string
+  type: string
+  data: ArrayBuffer
 }
 
 export type RecorderCommand =
@@ -83,6 +116,13 @@ export interface OverlayApi {
   copy(text: string): void
   sendNow(): void
   cancelRecording(): void
+  attachClipboard(): void
+  attachFiles(): void
+  attachDropped(files: DroppedFile[]): void
+  removeAttachment(name: ImageName): void
+  copyImage(name: ImageName): void
+  saveImage(name: ImageName): void
+  openImage(name: ImageName): void
 }
 
 export interface SetupStatus {
@@ -119,6 +159,8 @@ export interface ConversationSummary {
   snippet: string
   /** USD for the whole conversation; null when no turn has a known cost. */
   costUsd: number | null
+  /** Tokens for the whole conversation; null when no turn has a known count. */
+  tokens: number | null
 }
 
 export interface HistoryList {

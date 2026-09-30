@@ -50,7 +50,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T2.7 Nagrywanie do WAV 16 kHz przez AudioWorklet (zgodność z każdym modelem transkrypcji)
 - [x] T2.8 Czasy pod odpowiedzią: transkrypcja i pierwszy token odpowiedzi, z nazwami modeli
 - [x] T2.9 Modele transkrypcji: Grok STT (xAI) i Deepgram Nova-3
-- [x] T2.10 Koszt: `usage.cost` z transkrypcji i odpowiedzi, pod każdą odpowiedzią, suma rozmowy w nagłówku panelu i w historii
+- [x] T2.10 Koszt i tokeny: `usage` z transkrypcji, odpowiedzi i generowania obrazów, pod każdą odpowiedzią, suma rozmowy w nagłówku panelu i w historii
 - [x] T2.11 Wyszukiwanie w internecie: narzędzie `openrouter:web_search` (model sam decyduje), przełącznik „Szukaj w internecie” w menu, lista źródeł pod odpowiedzią; model bez obsługi narzędzi odpowiada bez wyszukiwania
 
 ### M3: Panel odpowiedzi
@@ -83,7 +83,9 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 
 ### M6: Po MVP
 - [ ] T6.2 Pisanie pytania zamiast mówienia (pole tekstowe w panelu)
-- [ ] T6.3 Kontekst: zaznaczony tekst / schowek / zrzut ekranu jako załącznik do pytania
+- [x] T6.3a Obrazy jako załącznik do pytania (maks. 3): ze schowka (także skopiowane pliki), z dysku, przeciągnięte albo wklejone do panelu
+- [ ] T6.3b Kontekst: zaznaczony tekst / zrzut ekranu jako załącznik do pytania
+- [x] T6.7 Generowanie i edycja obrazów: model czatu wywołuje narzędzie `generate_image`, rysuje model z menu „Model obrazów” przez `POST /api/v1/images`; edycja załączonych albo ostatnio wygenerowanych obrazów; kopiuj / zapisz / otwórz; pliki w `userData/images`, sprzątane po usunięciu rozmowy
 - [ ] T6.5 Tłumaczenie interfejsu (PL / EN)
 - [ ] T6.6 Czytanie odpowiedzi na głos (`/api/v1/audio/speech`)
 

@@ -1,14 +1,26 @@
 import { clipboard, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type {
-  ExternalLink,
-  HistoryList,
-  KeyCheckResult,
-  Microphone,
-  RecordingOutcome,
-  SetupStatus
+import {
+  MAX_ATTACHMENTS,
+  type DroppedFile,
+  type ExternalLink,
+  type HistoryList,
+  type KeyCheckResult,
+  type Microphone,
+  type RecordingOutcome,
+  type SetupStatus
 } from '../shared/types'
 import type { Controller } from './controller'
 import type { HistoryStore } from './db/history'
+import {
+  copyImageToClipboard,
+  deleteImages,
+  importClipboardImages,
+  importImageBytes,
+  isImageName,
+  openImage,
+  pickImageFiles,
+  saveImageAs
+} from './images'
 import { closeHistoryWindow, isHistoryWindow } from './history-window'
 import { checkKey, OpenRouterError } from './openrouter'
 import type { OverlayWindow } from './overlay-window'
@@ -36,6 +48,11 @@ export interface IpcDeps {
 function isMicrophone(value: unknown): value is Microphone {
   const mic = value as Partial<Microphone> | null
   return typeof mic?.deviceId === 'string' && typeof mic.label === 'string'
+}
+
+function isDroppedFile(value: unknown): value is DroppedFile {
+  const file = value as Partial<DroppedFile> | null
+  return typeof file?.name === 'string' && typeof file.type === 'string' && file.data instanceof ArrayBuffer
 }
 
 /** Conversation ids are UUIDs; anything else never matches a row. */
@@ -73,8 +90,35 @@ export function registerIpc({
     if (fromOverlay(event)) controller.newConversation()
   })
   ipcMain.on('overlay:copy', (event, text: unknown) => {
-    if (fromOverlay(event) && typeof text === 'string') clipboard.writeText(text)
+    if (fromOverlay(event) && typeof text === 'string') void clipboard.writeText(text)
   })
+  ipcMain.on('overlay:attach-clipboard', (event) => {
+    if (fromOverlay(event)) void controller.attach((room) => importClipboardImages(room))
+  })
+  ipcMain.on('overlay:attach-files', (event) => {
+    if (fromOverlay(event)) void controller.attach(() => pickImageFiles(MAX_ATTACHMENTS))
+  })
+  ipcMain.on('overlay:attach-dropped', (event, files: unknown) => {
+    if (!fromOverlay(event) || !Array.isArray(files)) return
+    const dropped = files.filter(isDroppedFile).slice(0, MAX_ATTACHMENTS)
+    if (dropped.length === 0) return
+    void controller.attach(() => dropped.map((file) => importImageBytes(Buffer.from(file.data), file.type)))
+  })
+  ipcMain.on('overlay:remove-attachment', (event, name: unknown) => {
+    if (fromOverlay(event) && isImageName(name)) controller.removeAttachment(name)
+  })
+  // Picture actions report failures in the panel instead of failing silently.
+  const imageAction = (channel: string, action: (name: string) => Promise<void>): void => {
+    ipcMain.on(channel, (event, name: unknown) => {
+      if (!fromOverlay(event) || !isImageName(name)) return
+      action(name).catch((error: unknown) =>
+        controller.notify(error instanceof Error ? error.message : String(error))
+      )
+    })
+  }
+  imageAction('overlay:copy-image', copyImageToClipboard)
+  imageAction('overlay:save-image', saveImageAs)
+  imageAction('overlay:open-image', openImage)
   ipcMain.on('overlay:send-now', (event) => {
     if (fromOverlay(event)) controller.sendNow()
   })
@@ -145,12 +189,12 @@ export function registerIpc({
     if (!fromHistory(event)) throw new Error('forbidden')
     const valid = conversationId(id)
     if (!valid || !history) return
-    history.delete(valid)
+    deleteImages(history.delete(valid))
     controller.conversationDeleted(valid)
   })
   ipcMain.handle('history:clear', (event) => {
     if (!fromHistory(event)) throw new Error('forbidden')
-    history?.clear()
+    deleteImages(history?.clear() ?? [])
     controller.conversationDeleted(null)
   })
   ipcMain.on('history:close', (event) => {

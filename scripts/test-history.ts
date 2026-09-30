@@ -57,6 +57,10 @@ function turn(position: number, question: string, answer: string, extra: Partial
     firstTokenMs: 610,
     costUsd: null,
     sources: null,
+    inputTokens: null,
+    outputTokens: null,
+    attachments: null,
+    images: null,
     createdAt: Date.now(),
     ...extra
   }
@@ -87,16 +91,34 @@ test('costs add up per conversation and sources come back as saved', () => {
   const store = new HistoryStore(file, migrations)
   try {
     const sources = [{ url: 'https://example.com/a', title: 'Przykład' }]
-    store.saveTurn('c1', turn(0, 'Kurs euro?', '4,25 zł.', { costUsd: 0.0012, sources }))
-    store.saveTurn('c1', turn(1, 'A dolara?', '3,90 zł.', { costUsd: 0.0008 }))
+    store.saveTurn('c1', turn(0, 'Kurs euro?', '4,25 zł.', { costUsd: 0.0012, sources, inputTokens: 100, outputTokens: 20 }))
+    store.saveTurn('c1', turn(1, 'A dolara?', '3,90 zł.', { costUsd: 0.0008, inputTokens: 150 }))
     store.saveTurn('c2', turn(0, 'Bez kosztu', 'Odpowiedź.'))
     const byId = new Map(store.list().map((c) => [c.id, c.costUsd]))
+    assert.equal(store.list().find((c) => c.id === 'c1')?.tokens, 270)
+    assert.equal(store.list().find((c) => c.id === 'c2')?.tokens, null)
     assert.ok(Math.abs((byId.get('c1') ?? 0) - 0.002) < 1e-12)
     assert.equal(byId.get('c2'), null)
     assert.deepEqual(
       store.turns('c1').map((t) => t.sources),
       [sources, null]
     )
+  } finally {
+    store.close()
+    cleanup()
+  }
+})
+
+test('deleting returns the picture files the conversation used', () => {
+  const { file, cleanup } = tempDb()
+  const store = new HistoryStore(file, migrations)
+  try {
+    store.saveTurn('c1', turn(0, 'Narysuj kota', '', { attachments: ['a.png'], images: ['b.png', 'c.png'] }))
+    store.saveTurn('c2', turn(0, 'Inna', 'x', { images: ['d.png'] }))
+    assert.deepEqual(store.imageFiles().sort(), ['a.png', 'b.png', 'c.png', 'd.png'])
+    assert.deepEqual(store.delete('c1'), ['a.png', 'b.png', 'c.png'])
+    assert.deepEqual(store.clear(), ['d.png'])
+    assert.deepEqual(store.imageFiles(), [])
   } finally {
     store.close()
     cleanup()
@@ -118,6 +140,7 @@ test('saving turns creates the conversation, keeps its title and bumps updated_a
       title: 'Jaka jest stolica Australii?',
       updatedAt: 5_000,
       costUsd: null,
+      tokens: null,
       snippet: 'Canberra.'
     })
     const saved = store.turns('c1')

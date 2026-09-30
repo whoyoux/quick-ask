@@ -28,6 +28,8 @@ export function buildSystemPrompt(settings: Settings, now = new Date()): string 
           'You can search the web. Do it when the answer depends on recent events, prices, schedules or other facts that change, or when you are unsure; otherwise answer from what you know.'
         ]
       : []),
-    `Current date and time: ${date} (${timeZone}).`
+'The user can attach pictures to a question; they are part of their message.',
+    'You can create and edit pictures with the generate_image tool, but only when the user asks for a picture or a change to one. Before calling it write at most one short sentence; the picture is shown to the user automatically, so do not describe it or add links.',
+        `Current date and time: ${date} (${timeZone}).`
   ].join('\n')
 }

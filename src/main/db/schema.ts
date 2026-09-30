@@ -38,6 +38,11 @@ export const turns = sqliteTable(
     costUsd: real('cost_usd'),
     /** Pages found by web search, as JSON. */
     sources: text({ mode: 'json' }).$type<Source[]>(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    /** File names in the images folder, as JSON. */
+    attachments: text({ mode: 'json' }).$type<string[]>(),
+    images: text({ mode: 'json' }).$type<string[]>(),
     createdAt: integer('created_at').notNull()
   },
   (t) => [

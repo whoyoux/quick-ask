@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { DEFAULT_CHAT_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RENAMED_MODELS } from './models'
+import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RENAMED_MODELS } from './models'
 import type { PttKeyId } from './push-to-talk'
 
 export type Language = 'auto' | 'pl' | 'en'
@@ -29,6 +29,8 @@ export interface Settings {
   saveHistory: boolean
   /** Let the model search the web (OpenRouter's server-side web search tool). */
   webSearch: boolean
+  /** Draws the pictures the chat model asks for. */
+  imageModel: string
 }
 
 function defaults(): Settings {
@@ -44,7 +46,8 @@ function defaults(): Settings {
     micDeviceId: null,
     micLabel: null,
     saveHistory: true,
-    webSearch: true
+    webSearch: true,
+    imageModel: DEFAULT_IMAGE_MODEL
   }
 }
 
