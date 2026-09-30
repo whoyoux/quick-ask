@@ -31,6 +31,8 @@ export interface Settings {
   webSearch: boolean
   /** Draws the pictures the chat model asks for. */
   imageModel: string
+  /** Look for new versions on GitHub every few hours. */
+  checkUpdates: boolean
   /** Where the user left the chat window, in screen DIPs. */
   chatBounds: { x: number; y: number; width: number; height: number } | null
 }
@@ -50,6 +52,7 @@ function defaults(): Settings {
     saveHistory: true,
     webSearch: true,
     imageModel: DEFAULT_IMAGE_MODEL,
+    checkUpdates: true,
     chatBounds: null
   }
 }

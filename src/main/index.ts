@@ -16,6 +16,7 @@ import { getApiKey } from './secrets'
 import { settings } from './settings'
 import { openSettingsWindow } from './settings-window'
 import { TrayMenu } from './tray'
+import { Updater } from './updater'
 
 const isMac = process.platform === 'darwin'
 /** OpenRouter books a request's cost a moment after the response ends. */
@@ -64,6 +65,7 @@ function main(): void {
   const surfaces = new Surfaces(overlay, chat)
 
   let tray: TrayMenu | null = null
+  const updater = new Updater(() => tray?.rebuild())
   let accessibilityPoll: NodeJS.Timeout | null = null
 
   const pttLabel = (): string => PTT_KEYS[settings.get().pttKey].label
@@ -162,13 +164,17 @@ function main(): void {
       showLastConversation: () => controller.showLastConversation(),
       openHistory: openHistoryWindow,
       openSettings: openSettingsWindow,
-      requestAccessibility
+      requestAccessibility,
+      checkForUpdates: () => updater.check(),
+      installUpdate: () => updater.install(),
+      openRelease: () => updater.openRelease()
     },
     () => ({
       hasKey: getApiKey() !== null,
       hookRunning: ptt.isRunning,
       recording: controller.isRecording,
-      hasConversation: controller.hasConversation
+      hasConversation: controller.hasConversation,
+      update: updater.current
     })
   )
 
@@ -193,12 +199,14 @@ function main(): void {
   else ptt.start()
   refresh()
   refreshBalance()
+  updater.start(settings.get().checkUpdates)
 
   let previous = settings.get()
   settings.onChange((current) => {
     if (current.pttKey !== previous.pttKey) ptt.setKey(current.pttKey)
     if (previous.overlayPosition && !current.overlayPosition) overlay.resetPosition()
     if (current.saveHistory !== previous.saveHistory) notifyHistoryWindow()
+    if (current.checkUpdates !== previous.checkUpdates) updater.setAutomatic(current.checkUpdates)
     previous = current
     refresh()
   })

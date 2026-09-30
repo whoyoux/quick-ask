@@ -1,7 +1,8 @@
 name: Release
 
 # Pushing a v* tag builds installers for every OS and attaches them to a draft GitHub Release.
-# Running it by hand only builds them; they stay as workflow artifacts.
+# Installed apps update only once the draft is published. Running it by hand only builds the
+# installers; they stay as workflow artifacts.
 on:
   push:
     tags: ['v*']
@@ -60,11 +61,16 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: quick-ask-${{ matrix.target }}
+          # latest*.yml tell installed apps about the new version; the zips are macOS updates and
+          # the blockmaps let electron-updater download only the changed parts.
           path: |
             release/*/*.dmg
+            release/*/*.zip
             release/*/*.exe
             release/*/*.AppImage
             release/*/*.deb
+            release/*/*.blockmap
+            release/*/latest*.yml
           if-no-files-found: error
           # Installers are already compressed.
           compression-level: 0
