@@ -31,6 +31,8 @@ export const PTT_KEYS: Record<PttKeyId, PttKey> = {
 
 /** Held shorter than this, the press counts as a tap and nothing is sent. */
 const HOLD_THRESHOLD_MS = 250
+/** Longer than the slowest keyboard auto-repeat delay Windows allows (1 s). */
+const STALE_PRESS_MS = 1500
 
 export interface PushToTalkHandlers {
   /** Trigger went down. Recording may start here so the first word isn't cut off. */
@@ -52,10 +54,14 @@ export class PushToTalk {
   private key: PttKey = PTT_KEYS['ctrl-right']
   private running = false
 
+  private lastTriggerDown = 0
+
   constructor(private readonly handlers: PushToTalkHandlers) {
     uIOhook.on('keydown', (event) => this.handleKeyDown(event))
     uIOhook.on('keyup', (event) => this.handleKeyUp(event))
-    uIOhook.on('mousedown', () => this.handleMouseDown())
+    // Ctrl+click, Ctrl+scroll (zoom) and friends: the trigger is being used as a modifier.
+    uIOhook.on('mousedown', () => this.cancelIfPressed('mouse click'))
+    uIOhook.on('wheel', () => this.cancelIfPressed('mouse wheel'))
   }
 
   get isRunning(): boolean {
@@ -89,8 +95,17 @@ export class PushToTalk {
   private handleKeyDown(event: UiohookKeyboardEvent): void {
     if (event.keycode === this.key.code) {
       debug('trigger down', { phase: this.phase })
-      // Auto-repeat keeps firing keydown while the key is held.
-      if (this.phase !== 'idle') return
+      const now = Date.now()
+      const sinceLast = now - this.lastTriggerDown
+      this.lastTriggerDown = now
+      if (this.phase !== 'idle') {
+        // Auto-repeat keeps firing keydown while the key is held (on Windows at least every
+        // second). A keydown after a longer gap means we never heard the release (macOS secure
+        // input, an elevated window on Windows): drop the stale recording, start over.
+        if (sinceLast < STALE_PRESS_MS) return
+        debug('missed a trigger release, restarting')
+        this.cancel()
+      }
       // Shift + right Ctrl and similar combos belong to someone else.
       if (this.otherModifiersHeld(event)) return
       this.phase = 'pressed'
@@ -123,16 +138,16 @@ export class PushToTalk {
     else this.handlers.onCancel()
   }
 
-  private handleMouseDown(): void {
-    // Ctrl+click and friends: the trigger is being used as a modifier.
-    if (this.phase !== 'idle') {
-      debug('cancelled by a mouse click')
-      this.cancel()
-    }
+  private cancelIfPressed(reason: string): void {
+    if (this.phase === 'idle') return
+    debug(`cancelled by a ${reason}`)
+    this.cancel()
   }
 
   private otherModifiersHeld(event: UiohookKeyboardEvent): boolean {
     const held = { ctrl: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey }
+    // On AltGr layouts Windows sends a fake left Ctrl with every right Alt press.
+    if (this.key.family === 'alt' && process.platform === 'win32') held.ctrl = false
     return Object.entries(held).some(([family, down]) => down && family !== this.key.family)
   }
 

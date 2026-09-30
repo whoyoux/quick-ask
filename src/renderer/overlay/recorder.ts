@@ -41,19 +41,23 @@ export class Recorder {
 
   async stop(): Promise<RecordingResult> {
     const generation = this.generation
-    await this.opening
-    const context = this.context
-    if (!context || generation !== this.generation) throw new Error('mikrofon się nie uruchomił')
-
-    const result: RecordingResult = {
-      audio: encodeWav(downsample(concat(this.chunks), context.sampleRate, TARGET_RATE), TARGET_RATE),
-      mimeType: 'audio/wav',
-      durationMs: performance.now() - this.startedAt,
-      voicedMs: this.voicedMs,
-      peakRms: this.peakRms
+    try {
+      await this.opening
+      const context = this.context
+      if (!context || generation !== this.generation) throw new Error('mikrofon się nie uruchomił')
+      // The context normally runs at 16 kHz already; if it doesn't, the header must say the real rate.
+      const rate = Math.min(context.sampleRate, TARGET_RATE)
+      return {
+        audio: encodeWav(downsample(concat(this.chunks), context.sampleRate, rate), rate),
+        mimeType: 'audio/wav',
+        durationMs: performance.now() - this.startedAt,
+        voicedMs: this.voicedMs,
+        peakRms: this.peakRms
+      }
+    } finally {
+      // A newer recording may have started meanwhile; leave that one alone.
+      if (generation === this.generation) this.teardown()
     }
-    this.teardown()
-    return result
   }
 
   cancel(): void {
@@ -64,26 +68,36 @@ export class Recorder {
   private async open(deviceId: string | null, generation: number): Promise<void> {
     const stream = await openMicrophone(deviceId)
     this.onOpen()
-    const context = new AudioContext()
     const stale = (): boolean => generation !== this.generation
     if (stale()) {
       // Cancelled while the microphone was starting.
       for (const track of stream.getTracks()) track.stop()
-      void context.close()
       return
     }
     this.stream = stream
-    this.context = context
 
-    await context.audioWorklet.addModule(workletUrl)
-    if (stale()) return
-    const capture = new AudioWorkletNode(context, 'pcm-capture')
-    capture.port.onmessage = (event: MessageEvent<Float32Array>) => this.handleSamples(event.data, context.sampleRate)
-    const mute = context.createGain()
-    mute.gain.value = 0
-    // The graph has to reach the destination to be processed; the gain keeps it silent.
-    context.createMediaStreamSource(stream).connect(capture).connect(mute).connect(context.destination)
-    await context.resume()
+    try {
+      // Chromium resamples the microphone to the context's rate, so capture happens at 16 kHz
+      // whatever the device runs at (a Bluetooth headset in call mode may be at 8 kHz).
+      const context = new AudioContext({ sampleRate: TARGET_RATE })
+      this.context = context
+      await context.audioWorklet.addModule(workletUrl)
+      if (stale()) return
+      const capture = new AudioWorkletNode(context, 'pcm-capture')
+      capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
+        // Samples still in flight after a stop must not leak into the next recording.
+        if (!stale()) this.handleSamples(event.data, context.sampleRate)
+      }
+      const mute = context.createGain()
+      mute.gain.value = 0
+      // The graph has to reach the destination to be processed; the gain keeps it silent.
+      context.createMediaStreamSource(stream).connect(capture).connect(mute).connect(context.destination)
+      await context.resume()
+    } catch (error) {
+      // Don't leave the microphone on when the audio graph can't start.
+      if (!stale()) this.teardown()
+      throw error
+    }
     this.startedAt = performance.now()
     this.lastLevelAt = this.startedAt
   }

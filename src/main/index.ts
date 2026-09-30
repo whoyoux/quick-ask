@@ -11,15 +11,19 @@ import { TrayMenu } from './tray'
 
 const isMac = process.platform === 'darwin'
 
-/** Only the overlay may use the microphone, and only for audio. */
-function allowMicrophoneFor(contents: WebContents): void {
+/**
+ * Only the overlay gets permissions: the microphone (audio only) and writing to the clipboard,
+ * which the "Kopiuj kod" buttons on code blocks use.
+ */
+function grantOverlayPermissions(contents: WebContents): void {
   session.defaultSession.setPermissionRequestHandler((requester, permission, callback, details) => {
     const audioOnly =
       permission === 'media' && 'mediaTypes' in details && (details.mediaTypes ?? []).every((t) => t === 'audio')
-    callback(requester === contents && audioOnly)
+    callback(requester === contents && (audioOnly || permission === 'clipboard-sanitized-write'))
   })
   session.defaultSession.setPermissionCheckHandler(
-    (requester, permission) => requester === contents && permission === 'media'
+    (requester, permission) =>
+      requester === contents && (permission === 'media' || permission === 'clipboard-sanitized-write')
   )
 }
 
@@ -28,7 +32,7 @@ function main(): void {
     saved: () => settings.get().overlayPosition,
     userMoved: (position) => settings.update({ overlayPosition: position })
   })
-  allowMicrophoneFor(overlay.webContents)
+  grantOverlayPermissions(overlay.webContents)
 
   let tray: TrayMenu | null = null
   let accessibilityPoll: NodeJS.Timeout | null = null

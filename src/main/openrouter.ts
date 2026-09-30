@@ -9,6 +9,14 @@ const APP_HEADERS = {
   'X-Title': 'Quick Ask'
 }
 
+const TIMEOUT_MESSAGE = 'Model nie odpowiedział na czas. Spróbuj ponownie albo zmień model w menu.'
+const CONNECTION_LOST_MESSAGE = 'Połączenie z OpenRouter zostało przerwane. Spróbuj ponownie.'
+/** Transcription providers give up after 60 s anyway. */
+const TRANSCRIPTION_TIMEOUT_MS = 45_000
+/** No bytes for this long ends a stream; OpenRouter sends keep-alive comments while a model thinks. */
+const STREAM_IDLE_TIMEOUT_MS = 30_000
+const KEY_CHECK_TIMEOUT_MS = 15_000
+
 export class OpenRouterError extends Error {
   constructor(
     message: string,
@@ -49,12 +57,42 @@ function describeStatus(status: number, detail: string): string {
   }
 }
 
-async function request(path: string, apiKey: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+/** Aborts when the caller aborts or when nothing happens for `ms`; `touch()` restarts the clock. */
+class Deadline {
+  readonly signal: AbortSignal
+  private readonly timeout = new AbortController()
+  private timer: NodeJS.Timeout
+
+  constructor(
+    private readonly ms: number,
+    private readonly caller?: AbortSignal
+  ) {
+    this.signal = caller ? AbortSignal.any([caller, this.timeout.signal]) : this.timeout.signal
+    this.timer = setTimeout(() => this.timeout.abort(), ms)
+  }
+
+  touch(): void {
+    clearTimeout(this.timer)
+    this.timer = setTimeout(() => this.timeout.abort(), this.ms)
+  }
+
+  clear(): void {
+    clearTimeout(this.timer)
+  }
+
+  /** The caller's own abort passes through untouched; everything else becomes a readable error. */
+  explain(error: unknown, otherwise: string): unknown {
+    if (this.caller?.aborted) return error
+    return new OpenRouterError(this.timeout.signal.aborted ? TIMEOUT_MESSAGE : otherwise)
+  }
+}
+
+async function request(path: string, apiKey: string, init: RequestInit, deadline: Deadline): Promise<Response> {
   let response: Response
   try {
     response = await fetch(BASE_URL + path, {
       ...init,
-      signal,
+      signal: deadline.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -62,8 +100,7 @@ async function request(path: string, apiKey: string, init: RequestInit, signal?:
       }
     })
   } catch (error) {
-    if (signal?.aborted) throw error
-    throw new OpenRouterError('Brak połączenia z OpenRouter. Sprawdź internet.')
+    throw deadline.explain(error, 'Brak połączenia z OpenRouter. Sprawdź internet.')
   }
   if (!response.ok) {
     let detail = ''
@@ -78,10 +115,23 @@ async function request(path: string, apiKey: string, init: RequestInit, signal?:
   return response
 }
 
+async function readJson<T>(response: Response, deadline: Deadline): Promise<T> {
+  try {
+    return (await response.json()) as T
+  } catch (error) {
+    throw deadline.explain(error, CONNECTION_LOST_MESSAGE)
+  }
+}
+
 export async function checkKey(apiKey: string): Promise<KeyInfo> {
-  const response = await request('/key', apiKey, { method: 'GET' })
-  const body = (await response.json()) as { data?: { label?: string; limit_remaining?: number | null } }
-  return { label: body.data?.label ?? null, limitRemaining: body.data?.limit_remaining ?? null }
+  const deadline = new Deadline(KEY_CHECK_TIMEOUT_MS)
+  try {
+    const response = await request('/key', apiKey, { method: 'GET' }, deadline)
+    const body = await readJson<{ data?: { label?: string; limit_remaining?: number | null } }>(response, deadline)
+    return { label: body.data?.label ?? null, limitRemaining: body.data?.limit_remaining ?? null }
+  } finally {
+    deadline.clear()
+  }
 }
 
 export async function transcribe(options: {
@@ -98,14 +148,19 @@ export async function transcribe(options: {
     temperature: 0,
     ...(options.language ? { language: options.language } : {})
   }
-  const response = await request(
-    '/audio/transcriptions',
-    options.apiKey,
-    { method: 'POST', body: JSON.stringify(body) },
-    options.signal
-  )
-  const result = (await response.json()) as { text?: string }
-  return (result.text ?? '').trim()
+  const deadline = new Deadline(TRANSCRIPTION_TIMEOUT_MS, options.signal)
+  try {
+    const response = await request(
+      '/audio/transcriptions',
+      options.apiKey,
+      { method: 'POST', body: JSON.stringify(body) },
+      deadline
+    )
+    const result = await readJson<{ text?: string }>(response, deadline)
+    return (result.text ?? '').trim()
+  } finally {
+    deadline.clear()
+  }
 }
 
 /** Streams a chat completion, calling `onDelta` with each text fragment as it arrives. */
@@ -116,45 +171,56 @@ export async function streamChat(options: {
   onDelta: (text: string) => void
   signal?: AbortSignal
 }): Promise<void> {
-  const response = await request(
-    '/chat/completions',
-    options.apiKey,
-    { method: 'POST', body: JSON.stringify({ model: options.model, messages: options.messages, stream: true }) },
-    options.signal
-  )
-  if (!response.body) throw new OpenRouterError('OpenRouter zwrócił pustą odpowiedź.')
+  const deadline = new Deadline(STREAM_IDLE_TIMEOUT_MS, options.signal)
+  try {
+    const response = await request(
+      '/chat/completions',
+      options.apiKey,
+      { method: 'POST', body: JSON.stringify({ model: options.model, messages: options.messages, stream: true }) },
+      deadline
+    )
+    if (!response.body) throw new OpenRouterError('OpenRouter zwrócił pustą odpowiedź.')
 
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) return
-    buffer += decoder.decode(value, { stream: true })
-
-    let newline: number
-    while ((newline = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, newline).trim()
-      buffer = buffer.slice(newline + 1)
-      // Lines starting with ':' are keep-alive comments (": OPENROUTER PROCESSING").
-      if (!line.startsWith('data:')) continue
-      const data = line.slice(5).trim()
-      if (data === '[DONE]') return
-
-      let chunk: {
-        error?: { message?: string; code?: number }
-        choices?: { delta?: { content?: string | null } }[]
-      }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      let read: Awaited<ReturnType<typeof reader.read>>
       try {
-        chunk = JSON.parse(data)
-      } catch {
-        continue
+        read = await reader.read()
+      } catch (error) {
+        throw deadline.explain(error, CONNECTION_LOST_MESSAGE)
       }
-      if (chunk.error) {
-        throw new OpenRouterError(chunk.error.message ?? 'Model przerwał odpowiedź z błędem.', chunk.error.code)
+      if (read.done) return
+      deadline.touch()
+      buffer += decoder.decode(read.value, { stream: true })
+
+      let newline: number
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim()
+        buffer = buffer.slice(newline + 1)
+        // Lines starting with ':' are keep-alive comments (": OPENROUTER PROCESSING").
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') return
+
+        let event: {
+          error?: { message?: string; code?: number }
+          choices?: { delta?: { content?: string | null } }[]
+        }
+        try {
+          event = JSON.parse(data)
+        } catch {
+          continue
+        }
+        if (event.error) {
+          throw new OpenRouterError(event.error.message ?? 'Model przerwał odpowiedź z błędem.', event.error.code)
+        }
+        const delta = event.choices?.[0]?.delta?.content
+        if (delta) options.onDelta(delta)
       }
-      const delta = chunk.choices?.[0]?.delta?.content
-      if (delta) options.onDelta(delta)
     }
+  } finally {
+    deadline.clear()
   }
 }

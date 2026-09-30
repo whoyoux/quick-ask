@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type Rectangle } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import type { OverlayView, RecorderCommand } from '../shared/types'
 import { captureWindow, debug, debugEnabled } from './debug'
 import type { OverlayPosition } from './settings'
@@ -25,8 +25,14 @@ export interface OverlayPlacement {
  */
 export class OverlayWindow {
   readonly win: BrowserWindow
+  /** The page is loaded and listening; commands sent before that would be lost. */
+  loaded = false
+  /** Called after the page (re)loads, so the owner can re-send its state. */
+  onLoad: () => void = () => {}
+  /** Called when the renderer crashed; anything it was doing (recording) is gone. */
+  onRendererLost: () => void = () => {}
   private size = { ...INITIAL_SIZE }
-  private applied: Rectangle | null = null
+  private userMoving = false
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly placement: OverlayPlacement) {
@@ -61,7 +67,22 @@ export class OverlayWindow {
     })
     this.win.setAlwaysOnTop(true, 'screen-saver')
     if (isMac) this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // 'will-move' only fires for moves the user makes, unlike 'moved' on macOS, which also
+    // reports our own setBounds and moves caused by a display change.
+    this.win.on('will-move', () => {
+      this.userMoving = true
+    })
     this.win.on('moved', () => this.handleMoved())
+    this.win.webContents.on('did-finish-load', () => {
+      this.loaded = true
+      this.onLoad()
+    })
+    this.win.webContents.on('render-process-gone', (_event, details) => {
+      debug('overlay renderer gone', details.reason)
+      this.loaded = false
+      this.onRendererLost()
+      loadPage(this.win, 'overlay')
+    })
     keepNavigationInBrowser(this.win)
     if (debugEnabled) this.win.webContents.on('console-message', (event) => debug('overlay console:', event.message))
     loadPage(this.win, 'overlay')
@@ -126,26 +147,23 @@ export class OverlayWindow {
     const width = Math.min(this.size.width, area.width)
     const height = Math.min(this.size.height, Math.round(area.height * MAX_HEIGHT_FRACTION))
     const clamp = (value: number, min: number, max: number): number => Math.round(Math.min(Math.max(value, min), max))
-    this.applied = {
+    this.win.setBounds({
       x: clamp(anchor.x - width / 2, area.x, area.x + area.width - width),
       y: clamp(anchor.y, area.y, area.y + area.height - height),
       width,
       height
-    }
-    this.win.setBounds(this.applied)
+    })
   }
 
   private handleMoved(): void {
-    const b = this.win.getBounds()
-    // macOS also reports our own setBounds as a move.
-    if (this.applied && b.x === this.applied.x && b.y === this.applied.y) return
+    if (!this.userMoving) return
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      const now = this.win.getBounds()
-      this.applied = now
-      this.placement.userMoved({ x: Math.round(now.x + now.width / 2), y: now.y })
-      debug('overlay moved by user', now)
+      this.userMoving = false
+      const b = this.win.getBounds()
+      this.placement.userMoved({ x: Math.round(b.x + b.width / 2), y: b.y })
+      debug('overlay moved by user', b)
     }, SAVE_POSITION_DELAY_MS)
   }
 }

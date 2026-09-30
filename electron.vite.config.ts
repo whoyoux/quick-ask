@@ -2,6 +2,14 @@ import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
+import type { Plugin } from 'vite'
+
+/** The pages' CSP allows WebSockets for the dev server's hot reload; packaged builds don't need them. */
+const productionCsp: Plugin = {
+  name: 'quick-ask:production-csp',
+  apply: 'build',
+  transformIndexHtml: (html) => html.replace("connect-src 'self' ws:", "connect-src 'self'")
+}
 
 // The renderer's libraries (React, Streamdown) live in devDependencies because Vite bundles
 // them; only native modules like uiohook-napi stay in dependencies and ship in node_modules.
@@ -25,7 +33,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), productionCsp],
     build: {
       // The audio worklet must be a real file: our CSP (script-src 'self') blocks data: URLs.
       assetsInlineLimit: (file) => (file.endsWith('.worklet.js') ? false : undefined),
