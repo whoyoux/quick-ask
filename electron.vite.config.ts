@@ -12,8 +12,9 @@ const productionCsp: Plugin = {
 }
 
 // Pure JS libraries (React and Streamdown in the renderers, Drizzle in the main process) live
-// in devDependencies because Vite bundles them; only native modules like uiohook-napi stay in
-// dependencies and ship in node_modules.
+// in devDependencies because Vite bundles them; only native modules like uiohook-napi and
+// electron-updater (which loads its platform updaters lazily) stay in dependencies and ship in
+// node_modules.
 export default defineConfig({
   main: {
     build: {

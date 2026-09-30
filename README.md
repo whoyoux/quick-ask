@@ -7,7 +7,7 @@ Hold a key, ask out loud, let go, and the answer appears in a chat window; while
 - **Push-to-talk**: hold right Ctrl (right Option on macOS) while you speak, release to send.
 - **Follow-ups**: while the chat window is open, hold the key again (or type) to continue the same conversation. Close it and the next question starts fresh.
 - **Any model**: bring your own [OpenRouter](https://openrouter.ai) key and pick the answering and transcription models from the tray menu.
-- **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter.
+- **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter (and GitHub, to check for new versions; you can turn that off in the tray menu).
 
 ## Install
 
@@ -16,6 +16,14 @@ Download the installer for your system from [Releases](https://github.com/whoyou
 - **Windows** (`…-win-x64-setup.exe`): if SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
 - **macOS** (`…-mac-arm64.dmg` for Apple Silicon, `…-mac-x64.dmg` for Intel): macOS reports an unsigned download as "damaged" or unverified. After dragging the app to Applications, run `xattr -dr com.apple.quarantine "/Applications/Quick Ask.app"` once.
 - **Linux** (x64, glibc 2.34+, e.g. Ubuntu 22.04, Debian 12, Fedora 35 or newer): on Debian and Ubuntu install the `.deb` with `sudo apt install ./quick-ask-*.deb`; it pulls in everything it needs. Elsewhere, make the `.AppImage` executable and run it. It needs FUSE 2 (`libfuse2`) and the X11 libraries push-to-talk links against: libX11, libXrandr, libXtst and libXt (`libx11-6 libxrandr2 libxtst6 libxt6` on Debian, `libX11 libXrandr libXtst libXt` on Fedora, `libx11 libxrandr libxtst libxt` on Arch). Most desktops already have them.
+
+### Updates
+
+Quick Ask checks [Releases](https://github.com/whoyoux/quick-ask/releases) for a new version shortly after it starts and every few hours (turn it off with **Sprawdzaj aktualizacje automatycznie** in the tray menu, or check by hand with **Sprawdź aktualizacje**):
+
+- **Windows** and the Linux **AppImage** download the update in the background and install it the next time you quit Quick Ask, or right away with **Uruchom ponownie i zaktualizuj**.
+- The Linux **.deb** downloads it the same way; **Uruchom ponownie i zaktualizuj** installs it and asks for your password.
+- **macOS** only tells you about the new version and links to its download, because macOS installs updates only for signed apps.
 
 ## How it works
 
@@ -61,7 +69,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The Release workflow builds the installers on macOS, Windows and Linux and attaches them to a draft GitHub Release; review the notes and publish it. Running the workflow by hand only builds the installers and keeps them as workflow artifacts. Local `npm run dist` packages for the current OS only.
+The Release workflow builds the installers on macOS, Windows and Linux and attaches them to a draft GitHub Release, together with the `latest*.yml` files, zips and blockmaps the updater reads; review the notes and publish it. Installed apps see the new version only once the release is published (drafts and pre-releases are ignored), so don't delete those extra files from it. Running the workflow by hand only builds the installers and keeps them as workflow artifacts. Local `npm run dist` packages for the current OS only.
 
 ## Roadmap
 

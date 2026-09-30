@@ -7,6 +7,7 @@ import { CHAT_MODELS, IMAGE_MODELS, TRANSCRIPTION_MODELS, type ModelOption } fro
 import type { KeyInfo } from './openrouter'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
 import { settings, type AnswerLength, type Language, type Settings } from './settings'
+import type { UpdateStatus } from './updater'
 
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'auto', label: 'Wykrywaj automatycznie' },
@@ -102,6 +103,37 @@ function microphoneItems(microphones: Microphone[], current: Settings): MenuItem
   return items
 }
 
+/** What the user can do about a new version, shown at the top of the menu. */
+function updateOffer(update: UpdateStatus, actions: TrayActions): MenuItemConstructorOptions[] {
+  if (update.kind === 'ready') {
+    return [{ label: `Uruchom ponownie i zaktualizuj do ${update.version}`, click: () => actions.installUpdate() }]
+  }
+  if (update.kind === 'available') {
+    return [{ label: `Pobierz Quick Ask ${update.version}…`, click: () => actions.openRelease() }]
+  }
+  return []
+}
+
+function updateItems(update: UpdateStatus, current: Settings, actions: TrayActions): MenuItemConstructorOptions[] {
+  const version = app.getVersion()
+  if (update.kind === 'unsupported') return [{ label: `Wersja ${version}`, enabled: false }]
+  const check: MenuItemConstructorOptions =
+    update.kind === 'checking'
+      ? { label: 'Sprawdzam aktualizacje…', enabled: false }
+      : update.kind === 'downloading'
+        ? { label: `Pobieram wersję ${update.version}… ${update.percent}%`, enabled: false }
+        : { label: `Sprawdź aktualizacje (wersja ${version})`, click: () => actions.checkForUpdates() }
+  return [
+    check,
+    {
+      label: 'Sprawdzaj aktualizacje automatycznie',
+      type: 'checkbox',
+      checked: current.checkUpdates,
+      click: (item) => settings.update({ checkUpdates: item.checked })
+    }
+  ]
+}
+
 function loadIcon(recording: boolean): NativeImage {
   const dir = join(app.getAppPath(), 'resources', 'tray')
   const image = nativeImage.createEmpty()
@@ -126,6 +158,7 @@ export interface TrayState {
   hookRunning: boolean
   recording: boolean
   hasConversation: boolean
+  update: UpdateStatus
 }
 
 export interface TrayActions {
@@ -137,6 +170,9 @@ export interface TrayActions {
   openHistory(): void
   openSettings(): void
   requestAccessibility(): void
+  checkForUpdates(): void
+  installUpdate(): void
+  openRelease(): void
 }
 
 export class TrayMenu {
@@ -190,7 +226,10 @@ export class TrayMenu {
           : { label: 'Skrót klawiszowy niedostępny: użyj „Zadaj pytanie”', enabled: false }
         : { label: `Przytrzymaj ${pttLabel} i mów`, enabled: false }
 
+    const offer = updateOffer(state.update, this.actions)
     const template: MenuItemConstructorOptions[] = [
+      ...offer,
+      ...(offer.length > 0 ? [{ type: 'separator' } as const] : []),
       status,
       {
         label: state.recording ? 'Wyślij pytanie' : 'Zadaj pytanie bez trzymania klawisza',
@@ -278,6 +317,8 @@ export class TrayMenu {
               click: (item: Electron.MenuItem) => app.setLoginItemSettings({ openAtLogin: item.checked })
             }
           ]),
+      { type: 'separator' },
+      ...updateItems(state.update, current, this.actions),
       { type: 'separator' },
       { label: 'Zakończ Quick Ask', click: () => app.quit() }
     ]
