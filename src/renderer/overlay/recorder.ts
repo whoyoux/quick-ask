@@ -14,6 +14,8 @@ const TARGET_RATE = 16_000
  */
 export class Recorder {
   onLevel: (level: number) => void = () => {}
+  /** Called once the microphone is open. */
+  onOpen: () => void = () => {}
 
   private generation = 0
   private opening: Promise<void> | null = null
@@ -60,15 +62,8 @@ export class Recorder {
   }
 
   private async open(deviceId: string | null, generation: number): Promise<void> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    })
+    const stream = await openMicrophone(deviceId)
+    this.onOpen()
     const context = new AudioContext()
     const stale = (): boolean => generation !== this.generation
     if (stale()) {
@@ -116,6 +111,24 @@ export class Recorder {
     void this.context?.close()
     this.context = null
     this.opening = null
+  }
+}
+
+/** A chosen microphone that has been unplugged falls back to the system default instead of failing. */
+async function openMicrophone(deviceId: string | null): Promise<MediaStream> {
+  const audio: MediaTrackConstraints = {
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  }
+  if (!deviceId) return navigator.mediaDevices.getUserMedia({ audio })
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { ...audio, deviceId: { exact: deviceId } } })
+  } catch (error) {
+    const name = (error as { name?: unknown } | null)?.name
+    if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error
+    return navigator.mediaDevices.getUserMedia({ audio })
   }
 }
 

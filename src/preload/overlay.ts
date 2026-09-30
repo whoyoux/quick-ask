@@ -11,6 +11,7 @@ const api: OverlayApi = {
   onView: (listener) => subscribe<OverlayView>('overlay:view', listener),
   onRecorder: (listener) => subscribe<RecorderCommand>('overlay:recorder', listener),
   sendRecording: (outcome) => ipcRenderer.send('overlay:recording', outcome),
+  reportMicrophones: (microphones) => ipcRenderer.send('overlay:microphones', microphones),
   resize: (size) => ipcRenderer.send('overlay:resize', size),
   close: () => ipcRenderer.send('overlay:close'),
   newConversation: () => ipcRenderer.send('overlay:new-conversation'),

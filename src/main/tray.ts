@@ -1,9 +1,10 @@
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Microphone } from '../shared/types'
 import { CHAT_MODELS, TRANSCRIPTION_MODELS } from './models'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
-import { settings, type AnswerLength, type Language } from './settings'
+import { settings, type AnswerLength, type Language, type Settings } from './settings'
 
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'auto', label: 'Wykrywaj automatycznie' },
@@ -32,6 +33,36 @@ function pttKeyOptions(): { id: PttKeyId; label: string }[] {
     // Right Alt is AltGr on Polish and many other layouts, so it collides with typing.
     { id: 'alt-right', label: 'Prawy Alt (koliduje z AltGr i polskimi znakami)' }
   ]
+}
+
+function microphoneItems(microphones: Microphone[], current: Settings): MenuItemConstructorOptions[] {
+  const items: MenuItemConstructorOptions[] = [
+    {
+      label: 'Domyślny systemowy',
+      type: 'radio',
+      checked: current.micDeviceId === null,
+      click: () => settings.update({ micDeviceId: null, micLabel: null })
+    },
+    ...microphones.map((mic, i): MenuItemConstructorOptions => {
+      const label = mic.label || `Mikrofon ${i + 1}`
+      return {
+        label,
+        type: 'radio',
+        checked: current.micDeviceId === mic.deviceId,
+        click: () => settings.update({ micDeviceId: mic.deviceId, micLabel: label })
+      }
+    })
+  ]
+  // An unplugged choice stays selected, so it comes back by itself once the device returns.
+  if (current.micDeviceId !== null && !microphones.some((mic) => mic.deviceId === current.micDeviceId)) {
+    items.push({
+      label: `${current.micLabel ?? 'Wybrany mikrofon'} (niedostępny, nagrywam z domyślnego)`,
+      type: 'radio',
+      checked: true,
+      enabled: false
+    })
+  }
+  return items
 }
 
 function loadIcon(recording: boolean): NativeImage {
@@ -71,6 +102,7 @@ export class TrayMenu {
   private readonly tray: Tray
   private readonly icons = { idle: loadIcon(false), recording: loadIcon(true) }
   private recording = false
+  private microphones: Microphone[] = []
 
   constructor(
     private readonly actions: TrayActions,
@@ -87,6 +119,13 @@ export class TrayMenu {
     if (recording === this.recording) return
     this.recording = recording
     this.tray.setImage(recording ? this.icons.recording : this.icons.idle)
+    this.rebuild()
+  }
+
+  /** The overlay reports the list on load, on device changes and whenever a recording starts. */
+  setMicrophones(microphones: Microphone[]): void {
+    if (JSON.stringify(microphones) === JSON.stringify(this.microphones)) return
+    this.microphones = microphones
     this.rebuild()
   }
 
@@ -156,6 +195,7 @@ export class TrayMenu {
           click: () => settings.update({ answerLength: l.id })
         }))
       },
+      { label: 'Mikrofon', submenu: microphoneItems(this.microphones, current) },
       {
         label: 'Klawisz nagrywania',
         submenu: pttKeyOptions().map((k) => ({

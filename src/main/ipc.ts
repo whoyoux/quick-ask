@@ -1,5 +1,5 @@
 import { clipboard, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { ExternalLink, KeyCheckResult, RecordingOutcome, SetupStatus } from '../shared/types'
+import type { ExternalLink, KeyCheckResult, Microphone, RecordingOutcome, SetupStatus } from '../shared/types'
 import type { Controller } from './controller'
 import { checkKey, OpenRouterError } from './openrouter'
 import type { OverlayWindow } from './overlay-window'
@@ -17,15 +17,31 @@ export interface IpcDeps {
   setupStatus(): SetupStatus
   requestAccessibility(): void
   onKeyChanged(): void
+  onMicrophones(microphones: Microphone[]): void
 }
 
-export function registerIpc({ overlay, controller, setupStatus, requestAccessibility, onKeyChanged }: IpcDeps): void {
+function isMicrophone(value: unknown): value is Microphone {
+  const mic = value as Partial<Microphone> | null
+  return typeof mic?.deviceId === 'string' && typeof mic.label === 'string'
+}
+
+export function registerIpc({
+  overlay,
+  controller,
+  setupStatus,
+  requestAccessibility,
+  onKeyChanged,
+  onMicrophones
+}: IpcDeps): void {
   const fromOverlay = (event: IpcMainEvent): boolean => event.sender === overlay.webContents
   const fromSettings = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => isSettingsWindow(event.sender)
 
   // Overlay --------------------------------------------------------------------------------
   ipcMain.on('overlay:recording', (event, outcome: RecordingOutcome) => {
     if (fromOverlay(event)) controller.handleRecording(outcome)
+  })
+  ipcMain.on('overlay:microphones', (event, microphones: unknown) => {
+    if (fromOverlay(event) && Array.isArray(microphones)) onMicrophones(microphones.filter(isMicrophone))
   })
   ipcMain.on('overlay:resize', (event, size: { width: number; height: number }) => {
     if (fromOverlay(event) && Number.isFinite(size?.width) && Number.isFinite(size?.height)) overlay.resize(size)

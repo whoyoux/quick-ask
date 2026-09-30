@@ -20,6 +20,10 @@ export interface Settings {
   pttKey: PttKeyId
   /** null = default spot, top-center of the screen with the mouse cursor. */
   overlayPosition: OverlayPosition | null
+  /** null = system default. */
+  micDeviceId: string | null
+  /** Name of the chosen microphone, so the tray can still name it while it is unplugged. */
+  micLabel: string | null
 }
 
 function defaults(): Settings {
@@ -31,7 +35,9 @@ function defaults(): Settings {
     language: systemLanguage.startsWith('pl') ? 'pl' : 'auto',
     answerLength: 'normal',
     pttKey: process.platform === 'darwin' ? 'alt-right' : 'ctrl-right',
-    overlayPosition: null
+    overlayPosition: null,
+    micDeviceId: null,
+    micLabel: null
   }
 }
 

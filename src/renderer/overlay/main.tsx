@@ -12,6 +12,26 @@ const api = window.quickAsk
 const recorder = new Recorder()
 recorder.onLevel = pushLevel
 
+/** Chromium's aliases for the default (and on Windows, communications) device; the tray has its own default item. */
+const DEFAULT_DEVICE_IDS = new Set(['default', 'communications'])
+
+// The tray's microphone menu is built from this list. Labels can stay empty until the
+// microphone has been used once, so the list is sent again whenever a recording starts.
+function reportMicrophones(): void {
+  navigator.mediaDevices.enumerateDevices().then(
+    (devices) =>
+      api.reportMicrophones(
+        devices
+          .filter((d) => d.kind === 'audioinput' && d.deviceId && !DEFAULT_DEVICE_IDS.has(d.deviceId))
+          .map((d) => ({ deviceId: d.deviceId, label: d.label }))
+      ),
+    () => {}
+  )
+}
+reportMicrophones()
+recorder.onOpen = reportMicrophones
+navigator.mediaDevices.addEventListener('devicechange', reportMicrophones)
+
 api.onRecorder((command) => {
   if (command.type === 'start') {
     resetLevels()

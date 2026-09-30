@@ -201,7 +201,7 @@ export class Controller {
     this.handsFree = handsFree
     this.continuing = this.overlay.visible && this.view.mode === 'panel'
     this.recorderPhase = 'arming'
-    this.overlay.recorder({ type: 'start', deviceId: null })
+    this.overlay.recorder({ type: 'start', deviceId: settings.get().micDeviceId })
   }
 
   private confirmRecording(): void {

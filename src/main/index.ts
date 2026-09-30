@@ -102,7 +102,14 @@ function main(): void {
     })
   )
 
-  registerIpc({ overlay, controller, setupStatus, requestAccessibility, onKeyChanged: refresh })
+  registerIpc({
+    overlay,
+    controller,
+    setupStatus,
+    requestAccessibility,
+    onKeyChanged: refresh,
+    onMicrophones: (microphones) => tray?.setMicrophones(microphones)
+  })
 
   // Global key listening needs the Accessibility permission on macOS.
   if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) requestAccessibility()

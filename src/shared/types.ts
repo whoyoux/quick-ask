@@ -54,11 +54,19 @@ export interface RecordingResult {
 
 export type RecordingOutcome = { ok: true; result: RecordingResult } | { ok: false; error: string }
 
+/** An audio input as the overlay's Chromium sees it. */
+export interface Microphone {
+  deviceId: string
+  /** Can be empty until the microphone has been used once. */
+  label: string
+}
+
 export interface OverlayApi {
   /** Returns a function that removes the listener. */
   onView(listener: (view: OverlayView) => void): () => void
   onRecorder(listener: (command: RecorderCommand) => void): () => void
   sendRecording(outcome: RecordingOutcome): void
+  reportMicrophones(microphones: Microphone[]): void
   resize(size: { width: number; height: number }): void
   close(): void
   newConversation(): void
