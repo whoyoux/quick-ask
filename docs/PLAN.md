@@ -9,7 +9,7 @@ odpowiedź z modelu AI. Ustawienia są w menu ikony w zasobniku systemowym (tray
 |---|---|
 | Stack | Electron + TypeScript + electron-vite; renderer w React 19 + Tailwind v4 |
 | Renderowanie odpowiedzi | [Streamdown](https://streamdown.ai): markdown streamowany token po tokenie, podświetlanie kodu (Shiki) |
-| Klucze AI | BYOK przez **OpenRouter**: jeden klucz, dowolny model; docelowo logowanie OAuth PKCE zamiast wklejania |
+| Klucze AI | BYOK przez **OpenRouter**: jeden klucz, dowolny model. Bez kont i logowania: użytkownik sam wkleja swój klucz |
 | Przepływ | nagranie (WAV 16 kHz mono) → `POST /api/v1/audio/transcriptions` → tekst → `POST /api/v1/chat/completions` (stream) |
 | Format nagrania | WAV zamiast WebM: przyjmuje go każdy model transkrypcji (np. Grok STT nie obsługuje WebM) |
 | Okno odpowiedzi | nie znika samo; zamyka je tylko ×, aplikacja zostaje w tle; można je przeciągać, położenie jest zapamiętywane |
@@ -63,8 +63,7 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 ### M4: Ustawienia i onboarding
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa
 - [x] T4.2 Okno klucza API z testem klucza (`GET /api/v1/key`) i prośbą o Accessibility na macOS
-- [ ] T4.3 Logowanie „Połącz z OpenRouter” (OAuth PKCE z callbackiem na localhost) zamiast wklejania klucza
-- [ ] T4.4 Onboarding przy pierwszym uruchomieniu: połączenie, test mikrofonu, uprawnienia
+- [ ] T4.4 Onboarding przy pierwszym uruchomieniu: klucz API, test mikrofonu, uprawnienia
 - [ ] T4.5 Wybór mikrofonu w menu (lista urządzeń z renderera)
 - [ ] T4.8 Historia rozmów w SQLite (Drizzle ORM): zapis każdej rozmowy, okno „Historia rozmów” z wyszukiwaniem, powrót do rozmowy i kontynuacja, przełącznik „Zapisuj historię”
 - [ ] T4.6 „Inny model…”: okno z wyszukiwarką po `GET /api/v1/models`
