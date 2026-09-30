@@ -18,10 +18,11 @@ export interface OverlayPlacement {
 }
 
 /**
- * The frameless, transparent window that hosts both the recording pill and the answer panel.
+ * The frameless, transparent, always-on-top window with the recording pill (the conversation
+ * itself lives in the chat window). It also hosts the recorder.
  * It stays loaded while hidden so recording can start instantly, and it is shown without
  * taking focus so the user keeps typing in whatever app they were using. The user can drag
- * it by the panel's header or footer; that spot is remembered.
+ * the pill; that spot is remembered.
  */
 export class OverlayWindow {
   readonly win: BrowserWindow

@@ -52,6 +52,8 @@ const appIcon = badge(GRAPHITE, RED, WHITE)
 write('build/icon.svg', appIcon)
 write('build/icon.png', png(appIcon, 1024))
 write('src/renderer/assets/icon.svg', appIcon)
+// Window, taskbar and Dock icon at runtime (the packaged app's .exe/.app icon comes from build/).
+write('resources/icon.png', png(appIcon, 512))
 
 // Windows/Linux tray: 16px at 100%, 125%, 150% and 200% display scaling.
 for (const size of [16, 20, 24, 32]) {

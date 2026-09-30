@@ -2,10 +2,10 @@
 
 # Quick Ask
 
-Hold a key, ask out loud, let go, and the answer appears in a small overlay on top of whatever you're doing. Quick Ask lives in the system tray (menu bar on macOS) and works on Windows, macOS and Linux.
+Hold a key, ask out loud, let go, and the answer appears in a chat window; while you speak, a small pill floats on top of whatever you're doing. Quick Ask lives in the system tray (menu bar on macOS) and works on Windows, macOS and Linux.
 
 - **Push-to-talk**: hold right Ctrl (right Option on macOS) while you speak, release to send.
-- **Follow-ups**: while the answer is still on screen, hold the key again to continue the same conversation. Close the panel and the next question starts fresh.
+- **Follow-ups**: while the chat window is open, hold the key again (or type) to continue the same conversation. Close it and the next question starts fresh.
 - **Any model**: bring your own [OpenRouter](https://openrouter.ai) key and pick the answering and transcription models from the tray menu.
 - **Private by default**: audio never touches the disk, the key is encrypted with the OS keychain, and nothing goes anywhere except OpenRouter.
 
@@ -22,7 +22,7 @@ Download the installer for your system from [Releases](https://github.com/whoyou
 ```
 hold key ─▶ record (webm/opus) ─▶ OpenRouter /audio/transcriptions ─▶ question text
                                                    │
-                        overlay ◀── streamed answer ◀── OpenRouter /chat/completions
+                    chat window ◀── streamed answer ◀── OpenRouter /chat/completions
 ```
 
 Electron's built-in `globalShortcut` only reports key presses, so push-to-talk listens to raw key down/up events through [`uiohook-napi`](https://github.com/SnosMe/uiohook-napi). Answers are rendered while streaming with [Streamdown](https://streamdown.ai).

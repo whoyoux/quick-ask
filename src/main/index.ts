@@ -8,7 +8,9 @@ import { notifyHistoryWindow, openHistoryWindow } from './history-window'
 import { handleImageProtocol, importClipboardImages, pickImageFiles, registerImageScheme, sweepImages } from './images'
 import { maskedKey, registerIpc } from './ipc'
 import { checkKey } from './openrouter'
+import { ChatWindow } from './chat-window'
 import { OverlayWindow } from './overlay-window'
+import { Surfaces } from './surfaces'
 import { PTT_KEYS, PushToTalk } from './push-to-talk'
 import { getApiKey } from './secrets'
 import { settings } from './settings'
@@ -33,18 +35,19 @@ function openHistory(): HistoryStore | null {
 }
 
 /**
- * Only the overlay gets permissions: the microphone (audio only) and writing to the clipboard,
- * which the "Kopiuj kod" buttons on code blocks use.
+ * Only the pill (which records) may use the microphone, audio only. It and the chat window may
+ * write to the clipboard, which the "Kopiuj kod" buttons on code blocks use.
  */
-function grantOverlayPermissions(contents: WebContents): void {
+function grantPermissions(recorder: WebContents, chat: WebContents): void {
+  const allowed = (requester: WebContents | null, permission: string, audioOnly: boolean): boolean =>
+    (requester === recorder && permission === 'media' && audioOnly) ||
+    ((requester === recorder || requester === chat) && permission === 'clipboard-sanitized-write')
   session.defaultSession.setPermissionRequestHandler((requester, permission, callback, details) => {
-    const audioOnly =
-      permission === 'media' && 'mediaTypes' in details && (details.mediaTypes ?? []).every((t) => t === 'audio')
-    callback(requester === contents && (audioOnly || permission === 'clipboard-sanitized-write'))
+    const audioOnly = 'mediaTypes' in details && (details.mediaTypes ?? []).every((t) => t === 'audio')
+    callback(allowed(requester, permission, audioOnly))
   })
-  session.defaultSession.setPermissionCheckHandler(
-    (requester, permission) =>
-      requester === contents && (permission === 'media' || permission === 'clipboard-sanitized-write')
+  session.defaultSession.setPermissionCheckHandler((requester, permission) =>
+    allowed(requester, permission, true)
   )
 }
 
@@ -53,7 +56,12 @@ function main(): void {
     saved: () => settings.get().overlayPosition,
     userMoved: (position) => settings.update({ overlayPosition: position })
   })
-  grantOverlayPermissions(overlay.webContents)
+  const chat = new ChatWindow({
+    saved: () => settings.get().chatBounds,
+    save: (bounds) => settings.update({ chatBounds: bounds })
+  })
+  grantPermissions(overlay.webContents, chat.webContents)
+  const surfaces = new Surfaces(overlay, chat)
 
   let tray: TrayMenu | null = null
   let accessibilityPoll: NodeJS.Timeout | null = null
@@ -65,7 +73,7 @@ function main(): void {
   sweepImages(new Set(history?.imageFiles() ?? []))
 
   const controller = new Controller(
-    overlay,
+    surfaces,
     {
       onRecordingChange: (recording) => tray?.setRecording(recording),
       onConversationChange: () => tray?.rebuild(),
@@ -164,8 +172,11 @@ function main(): void {
     })
   )
 
+  chat.onClose = () => controller.hide()
+
   registerIpc({
     overlay,
+    chat,
     controller,
     history,
     setupStatus,

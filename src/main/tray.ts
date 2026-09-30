@@ -257,7 +257,7 @@ export class TrayMenu {
         }))
       },
       ...(current.overlayPosition
-        ? [{ label: 'Przywróć położenie okna', click: () => settings.update({ overlayPosition: null }) }]
+        ? [{ label: 'Przywróć położenie pigułki nagrywania', click: () => settings.update({ overlayPosition: null }) }]
         : []),
       { type: 'separator' },
       { label: 'Klucz API OpenRouter…', click: () => this.actions.openSettings() },

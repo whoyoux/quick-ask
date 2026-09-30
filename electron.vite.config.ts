@@ -42,6 +42,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+          chat: resolve(__dirname, 'src/renderer/chat.html'),
           settings: resolve(__dirname, 'src/renderer/settings.html'),
           history: resolve(__dirname, 'src/renderer/history.html')
         }

@@ -12,11 +12,11 @@ odpowiedź z modelu AI. Ustawienia są w menu ikony w zasobniku systemowym (tray
 | Klucze AI | BYOK przez **OpenRouter**: jeden klucz, dowolny model. Bez kont i logowania: użytkownik sam wkleja swój klucz |
 | Przepływ | nagranie (WAV 16 kHz mono) → `POST /api/v1/audio/transcriptions` → tekst → `POST /api/v1/chat/completions` (stream) |
 | Format nagrania | WAV zamiast WebM: przyjmuje go każdy model transkrypcji (np. Grok STT nie obsługuje WebM) |
-| Okno odpowiedzi | nie znika samo; zamyka je tylko ×, aplikacja zostaje w tle; można je przeciągać, położenie jest zapamiętywane |
-| Tło okna | pełny grafit: Windows rysuje blur (acrylic) tylko dla aktywnego okna, a overlay celowo nie zabiera fokusu |
+| Okna | nagrywanie: mała pigułka zawsze na wierzchu, bez fokusu (tam też działa nagrywarka); rozmowa: zwykłe okno aplikacji (pasek zadań, można je przykryć, zmienić rozmiar), zamknięcie tylko je chowa, rozmiar i położenie są zapamiętywane |
+| Tło okna | pełny grafit; okno rozmowy bez systemowego paska tytułu, przyciski okna rysuje system nad naszym nagłówkiem |
 | Skrót | **push-to-talk**: trzymasz = nagrywa, puszczasz = wysyła. `uiohook-napi` (globalne keydown/keyup) |
 | Klawisz domyślny | Windows/Linux: prawy Ctrl (nie prawy Alt, bo to AltGr dla polskich znaków), macOS: prawy Option |
-| Wątki | panel otwarty + klawisz = dopytanie w tym samym wątku; panel zamknięty = nowa rozmowa |
+| Wątki | okno rozmowy otwarte (także zminimalizowane lub przykryte) + klawisz = dopytanie w tym samym wątku; zamknięte = nowa rozmowa |
 | Klucz API | tylko w procesie głównym, szyfrowany przez `safeStorage` (Keychain / DPAPI / libsecret) |
 | Bezpieczeństwo UI | renderer z `sandbox` + `contextIsolation`; w odpowiedziach bez surowego HTML i bez obrazków, linki tylko http(s)/mailto i zawsze w przeglądarce |
 | Wygląd | grafitowe tło (#1E1E22) + czerwony akcent (#E9383F); ikona: „Q” jako dymek z paskami głosu |
@@ -60,7 +60,8 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T3.4 Linki z odpowiedzi otwierane w przeglądarce, nigdy w overlayu
 - [ ] T3.5 Natywny blur na macOS (`vibrancy`); na Windows zostaje pełne tło, bo acrylic działa tylko w aktywnym oknie
 - [ ] T3.6 Zwijanie starszych pytań przy długich rozmowach
-- [x] T3.7 Przeciąganie okna za nagłówek lub stopkę, zapamiętane położenie, „Przywróć położenie okna” w menu
+- [x] T3.7 Przeciąganie pigułki nagrywania, zapamiętane położenie, „Przywróć położenie pigułki nagrywania” w menu
+- [x] T3.8 Rozmowa jako zwykłe okno aplikacji (zamiast okna zawsze na wierzchu), nasza ikona w oknach, na pasku zadań i w Docku
 
 ### M4: Ustawienia i onboarding
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa

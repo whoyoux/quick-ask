@@ -23,6 +23,7 @@ import {
 } from './images'
 import { closeHistoryWindow, isHistoryWindow } from './history-window'
 import { checkKey, OpenRouterError } from './openrouter'
+import type { ChatWindow } from './chat-window'
 import type { OverlayWindow } from './overlay-window'
 import { clearApiKey, getApiKey, maskKey, setApiKey } from './secrets'
 import { settings } from './settings'
@@ -37,6 +38,7 @@ const MAX_QUERY_LENGTH = 200
 
 export interface IpcDeps {
   overlay: OverlayWindow
+  chat: ChatWindow
   controller: Controller
   history: HistoryStore | null
   setupStatus(): SetupStatus
@@ -62,6 +64,7 @@ function conversationId(value: unknown): string | null {
 
 export function registerIpc({
   overlay,
+  chat,
   controller,
   history,
   setupStatus,
@@ -69,7 +72,10 @@ export function registerIpc({
   onKeyChanged,
   onMicrophones
 }: IpcDeps): void {
+  // The pill's page records; both it and the chat window show the conversation and act on it.
   const fromOverlay = (event: IpcMainEvent): boolean => event.sender === overlay.webContents
+  const fromUi = (event: IpcMainEvent): boolean =>
+    event.sender === overlay.webContents || event.sender === chat.webContents
   const fromSettings = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => isSettingsWindow(event.sender)
   const fromHistory = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => isHistoryWindow(event.sender)
 
@@ -84,36 +90,36 @@ export function registerIpc({
     if (fromOverlay(event) && Number.isFinite(size?.width) && Number.isFinite(size?.height)) overlay.resize(size)
   })
   ipcMain.on('overlay:close', (event) => {
-    if (fromOverlay(event)) controller.hide()
+    if (fromUi(event)) controller.hide()
   })
   ipcMain.on('overlay:new-conversation', (event) => {
-    if (fromOverlay(event)) controller.newConversation()
+    if (fromUi(event)) controller.newConversation()
   })
   ipcMain.on('overlay:copy', (event, text: unknown) => {
-    if (fromOverlay(event) && typeof text === 'string') void clipboard.writeText(text)
+    if (fromUi(event) && typeof text === 'string') void clipboard.writeText(text)
   })
   ipcMain.on('overlay:ask-text', (event, text: unknown) => {
-    if (fromOverlay(event) && typeof text === 'string') controller.askText(text)
+    if (fromUi(event) && typeof text === 'string') controller.askText(text)
   })
   ipcMain.on('overlay:attach-clipboard', (event) => {
-    if (fromOverlay(event)) void controller.attach((room) => importClipboardImages(room))
+    if (fromUi(event)) void controller.attach((room) => importClipboardImages(room))
   })
   ipcMain.on('overlay:attach-files', (event) => {
-    if (fromOverlay(event)) void controller.attach(() => pickImageFiles(MAX_ATTACHMENTS))
+    if (fromUi(event)) void controller.attach(() => pickImageFiles(MAX_ATTACHMENTS))
   })
   ipcMain.on('overlay:attach-dropped', (event, files: unknown) => {
-    if (!fromOverlay(event) || !Array.isArray(files)) return
+    if (!fromUi(event) || !Array.isArray(files)) return
     const dropped = files.filter(isDroppedFile).slice(0, MAX_ATTACHMENTS)
     if (dropped.length === 0) return
     void controller.attach(() => dropped.map((file) => importImageBytes(Buffer.from(file.data), file.type)))
   })
   ipcMain.on('overlay:remove-attachment', (event, name: unknown) => {
-    if (fromOverlay(event) && isImageName(name)) controller.removeAttachment(name)
+    if (fromUi(event) && isImageName(name)) controller.removeAttachment(name)
   })
   // Picture actions report failures in the panel instead of failing silently.
   const imageAction = (channel: string, action: (name: string) => Promise<void>): void => {
     ipcMain.on(channel, (event, name: unknown) => {
-      if (!fromOverlay(event) || !isImageName(name)) return
+      if (!fromUi(event) || !isImageName(name)) return
       action(name).catch((error: unknown) =>
         controller.notify(error instanceof Error ? error.message : String(error))
       )
@@ -123,10 +129,10 @@ export function registerIpc({
   imageAction('overlay:save-image', saveImageAs)
   imageAction('overlay:open-image', openImage)
   ipcMain.on('overlay:send-now', (event) => {
-    if (fromOverlay(event)) controller.sendNow()
+    if (fromUi(event)) controller.sendNow()
   })
   ipcMain.on('overlay:cancel-recording', (event) => {
-    if (fromOverlay(event)) controller.cancelFromUi()
+    if (fromUi(event)) controller.cancelFromUi()
   })
 
   // Settings window ------------------------------------------------------------------------

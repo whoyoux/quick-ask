@@ -15,7 +15,7 @@ import {
   type FunctionTool,
   type ToolCall
 } from './openrouter'
-import type { OverlayWindow } from './overlay-window'
+import type { Surfaces } from './surfaces'
 import { buildSystemPrompt } from './prompt'
 import { getApiKey } from './secrets'
 import { settings } from './settings'
@@ -152,13 +152,13 @@ export class Controller {
   private nextTurnId = 1
 
   constructor(
-    private readonly overlay: OverlayWindow,
+    private readonly surfaces: Surfaces,
     private readonly hooks: ControllerHooks,
     /** null when the database could not be opened; questions still work, nothing is saved. */
     private readonly history: HistoryStore | null
   ) {
-    overlay.onLoad = () => this.pushView()
-    overlay.onRendererLost = () => this.recorderLost('Nagrywanie przerwane: okno Quick Ask uległo awarii.')
+    surfaces.onLoad = () => this.pushView()
+    surfaces.onRendererLost = () => this.recorderLost('Nagrywanie przerwane: okno Quick Ask uległo awarii.')
   }
 
   get isRecording(): boolean {
@@ -172,7 +172,7 @@ export class Controller {
   // Push-to-talk ---------------------------------------------------------------------------
 
   keyPressed(): void {
-    if (this.recorderPhase !== 'idle' || !this.overlay.loaded || !getApiKey() || !micPermissionGranted()) return
+    if (this.recorderPhase !== 'idle' || !this.surfaces.loaded || !getApiKey() || !micPermissionGranted()) return
     this.beginRecording(false)
   }
 
@@ -208,7 +208,7 @@ export class Controller {
       this.finishRecording()
       return
     }
-    if (this.recorderPhase !== 'idle' || !this.overlay.loaded || !this.ready()) return
+    if (this.recorderPhase !== 'idle' || !this.surfaces.loaded || !this.ready()) return
     this.beginRecording(true)
     this.confirmRecording()
   }
@@ -236,7 +236,7 @@ export class Controller {
     this.clearNoticeTimer()
     this.view.mode = 'hidden'
     this.view.notice = null
-    this.overlay.hide()
+    this.surfaces.hide()
     this.pushView()
   }
 
@@ -251,13 +251,13 @@ export class Controller {
       this.hooks.openSettings()
       return
     }
-    void this.ask({ text }, this.overlay.visible && this.view.mode === 'panel')
+    void this.ask({ text }, this.surfaces.visible && this.view.mode === 'panel')
   }
 
   /** Opens the panel with the cursor in the text box (tray: "Napisz pytanie…"). */
   startTyping(): void {
     this.showPanel()
-    this.overlay.focusInput()
+    this.surfaces.focusInput()
   }
 
   // Attachments ----------------------------------------------------------------------------
@@ -299,10 +299,11 @@ export class Controller {
     this.view.attachments = []
   }
 
+  /** The user asked for the chat window (tray, attach buttons), so it becomes active. */
   private showPanel(): void {
     this.view.mode = 'panel'
     this.pushView()
-    this.overlay.show()
+    this.surfaces.activate()
   }
 
   private showPanelNotice(text: string): void {
@@ -326,7 +327,7 @@ export class Controller {
     this.view.mode = 'panel'
     this.view.notice = null
     this.pushView()
-    this.overlay.show()
+    this.surfaces.activate()
   }
 
   /** Shows a saved conversation in the panel; the next question continues it. */
@@ -362,7 +363,7 @@ export class Controller {
     this.view.mode = 'panel'
     this.view.notice = null
     this.pushView()
-    this.overlay.show()
+    this.surfaces.activate()
     this.hooks.onConversationChange()
     return true
   }
@@ -427,9 +428,9 @@ export class Controller {
 
   private beginRecording(handsFree: boolean): void {
     this.handsFree = handsFree
-    this.continuing = this.overlay.visible && this.view.mode === 'panel'
+    this.continuing = this.surfaces.visible && this.view.mode === 'panel'
     this.recorderPhase = 'arming'
-    this.overlay.recorder({ type: 'start', deviceId: settings.get().micDeviceId })
+    this.surfaces.recorder({ type: 'start', deviceId: settings.get().micDeviceId })
   }
 
   private confirmRecording(): void {
@@ -439,7 +440,7 @@ export class Controller {
     this.view.mode = this.continuing ? 'panel' : 'pill'
     this.view.notice = null
     this.pushView()
-    this.overlay.show()
+    this.surfaces.show()
     this.hooks.onRecordingChange(true)
     this.maxTimer = setTimeout(() => this.finishRecording(), MAX_RECORDING_MS)
   }
@@ -450,11 +451,11 @@ export class Controller {
     this.clearMaxTimer()
     this.hooks.onRecordingChange(false)
     // The view keeps showing the recording state until the audio arrives (a few ms).
-    this.overlay.recorder({ type: 'stop' })
+    this.surfaces.recorder({ type: 'stop' })
     // Without an answer from the renderer the recorder would never accept another question.
     this.stopTimer = setTimeout(() => {
       this.stopTimer = null
-      this.overlay.recorder({ type: 'cancel' })
+      this.surfaces.recorder({ type: 'cancel' })
       this.recorderLost('Nie udało się zakończyć nagrania. Spróbuj ponownie.')
     }, STOP_TIMEOUT_MS)
   }
@@ -464,7 +465,7 @@ export class Controller {
     const wasShown = this.recorderPhase === 'recording'
     this.recorderPhase = 'idle'
     this.clearMaxTimer()
-    this.overlay.recorder({ type: 'cancel' })
+    this.surfaces.recorder({ type: 'cancel' })
     if (!wasShown) return
     this.hooks.onRecordingChange(false)
     this.view.recording = null
@@ -534,7 +535,7 @@ export class Controller {
     this.view.mode = 'panel'
     this.view.notice = null
     this.pushView()
-    this.overlay.show()
+    this.surfaces.show()
     this.hooks.onConversationChange()
 
     try {
@@ -748,11 +749,11 @@ export class Controller {
   private showNotice(text: string): void {
     this.clearNoticeTimer()
     this.view.notice = text
-    const panelOpen = this.overlay.visible && this.view.mode === 'panel'
+    const panelOpen = this.surfaces.visible && this.view.mode === 'panel'
     // A notice from an earlier question must not replace a recording in progress.
     if (!panelOpen && !this.recordingShown()) this.view.mode = 'pill'
     this.pushView()
-    this.overlay.show()
+    this.surfaces.show()
     this.noticeTimer = setTimeout(() => {
       this.noticeTimer = null
       if (this.view.mode === 'pill' && !this.recordingShown()) {
@@ -782,7 +783,7 @@ export class Controller {
       notice: this.view.notice,
       turns: this.view.turns.map((t) => t.status)
     })
-    this.overlay.render(this.view)
+    this.surfaces.render(this.view)
   }
 
   private clearMaxTimer(): void {

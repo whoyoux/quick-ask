@@ -28,6 +28,7 @@ const INITIAL_VIEW: OverlayView = {
 const DRAG = '[-webkit-app-region:drag]'
 const NO_DRAG = '[-webkit-app-region:no-drag]'
 
+/** The always-on-top window: only the recording pill and short notices. */
 export function App() {
   const [view, setView] = useState(INITIAL_VIEW)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -43,17 +44,21 @@ export function App() {
     return () => observer.disconnect()
   }, [])
 
-  // Esc closes the panel only once the user has clicked into it; elsewhere Esc belongs to other apps.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      // The text box handles Esc itself while it holds a draft.
-      if (event.key === 'Escape' && !event.defaultPrevented) api.close()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  const showPill = view.recording !== null || (view.mode === 'pill' && view.notice !== null)
+  return (
+    // The padding leaves room for the shadow inside the transparent window.
+    <div ref={rootRef} className="inline-block p-3">
+      {showPill && <Pill view={view} />}
+    </div>
+  )
+}
 
-  // Pictures dropped on the window or pasted into it (once the user clicked into the panel).
+/** The chat window: the conversation, filling an ordinary app window. */
+export function ChatApp() {
+  const [view, setView] = useState(INITIAL_VIEW)
+  useEffect(() => api.onView(setView), [])
+
+  // Pictures dropped on the window or pasted into it.
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
     const send = async (files: File[]): Promise<void> => {
@@ -94,14 +99,11 @@ export function App() {
     }
   }, [])
 
-  return (
-    // The padding leaves room for the shadow inside the transparent window.
-    <div ref={rootRef} className="inline-block p-3">
-      {view.mode === 'pill' && <Pill view={view} />}
-      {view.mode === 'panel' && <Panel view={view} dragging={dragging} />}
-    </div>
-  )
+  return <Panel view={view} dragging={dragging} />
 }
+
+/** The system draws the window buttons over our header: on the left on macOS, on the right elsewhere. */
+const IS_MAC = navigator.userAgent.includes('Mac')
 
 // Recording pill ------------------------------------------------------------------------------
 
@@ -198,10 +200,10 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
   }
 
   return (
-    <section
-      className={`flex w-[600px] flex-col overflow-hidden rounded-2xl border bg-graphite shadow-[0_10px_32px_rgb(0_0_0/0.35)] ${dragging ? 'border-brand' : 'border-border'}`}
-    >
-      <header className={`flex h-10 items-center gap-2 border-b border-border pr-1.5 pl-4 ${DRAG}`}>
+    <section className={`flex h-screen flex-col bg-graphite ${dragging ? 'ring-2 ring-brand ring-inset' : ''}`}>
+      <header
+        className={`flex h-10 shrink-0 items-center gap-2 border-b border-border ${IS_MAC ? 'pr-2 pl-20' : 'pr-[148px] pl-4'} ${DRAG}`}
+      >
         <img src={iconUrl} alt="" className="size-4 rounded-[4px]" />
         <span className="text-xs text-muted-foreground">Quick Ask</span>
         {summary.length > 0 && (
@@ -226,17 +228,13 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
               Nowa rozmowa
             </Button>
           )}
-          <Button variant="ghost" label="Zamknij (aplikacja zostaje w tle)" onClick={() => api.close()}>
-            <span className="text-base leading-none">×</span>
-          </Button>
         </span>
       </header>
 
       <div
         ref={threadRef}
         aria-live="polite"
-        className="overflow-y-auto px-5 pt-4 pb-3.5 select-text [scrollbar-color:rgb(255_255_255/0.14)_transparent]"
-        style={{ maxHeight: Math.round(window.screen.availHeight * 0.6) }}
+        className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-3.5 select-text [scrollbar-color:rgb(255_255_255/0.14)_transparent]"
         onScroll={(event) => {
           const el = event.currentTarget
           followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
@@ -252,7 +250,7 @@ function Panel({ view, dragging }: { view: OverlayView; dragging: boolean }) {
 
       <Composer followUp={view.turns.length > 0} />
 
-      <footer className={`flex min-h-9 items-center justify-between gap-3 border-t border-border py-1 pr-1.5 pl-5 ${DRAG}`}>
+      <footer className="flex min-h-9 shrink-0 items-center justify-between gap-3 border-t border-border py-1 pr-1.5 pl-5">
         {/* Not `truncate` while recording: its overflow clipping would cut off the pulsing dot's halo. */}
         <div className={`min-w-0 text-xs ${view.recording ? '' : 'truncate'}`}>
           {view.recording ? (
@@ -342,7 +340,7 @@ function Composer({ followUp }: { followUp: boolean }) {
   }
 
   return (
-    <div className={`flex items-end gap-2 border-t border-border py-2 pr-2 pl-5 ${NO_DRAG}`}>
+    <div className="flex shrink-0 items-end gap-2 border-t border-border py-2 pr-2 pl-5">
       <textarea
         ref={inputRef}
         rows={1}
@@ -412,7 +410,7 @@ function Thumbnail({ name, size }: { name: ImageName; size: number }) {
 /** Pictures that will go with the next question. */
 function PendingAttachments({ names }: { names: ImageName[] }) {
   return (
-    <div className="flex items-center gap-2 border-t border-border px-5 py-2.5">
+    <div className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-2.5">
       {names.map((name) => (
         <span key={name} className="relative">
           <Thumbnail name={name} size={52} />
@@ -442,7 +440,7 @@ function GeneratedImage({ name }: { name: ImageName }) {
           src={imageUrl(name)}
           alt="Wygenerowany obraz"
           draggable={false}
-          className="max-h-[360px] max-w-full rounded-xl border border-border object-contain"
+          className="max-h-[60vh] max-w-full rounded-xl border border-border object-contain"
         />
       </button>
       <figcaption className="mt-1.5 flex gap-1">

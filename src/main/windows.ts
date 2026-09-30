@@ -1,7 +1,15 @@
-import { app, shell, type BrowserWindow } from 'electron'
+import { app, nativeImage, shell, type BrowserWindow, type NativeImage } from 'electron'
 import { join } from 'node:path'
 
-export type Page = 'overlay' | 'settings' | 'history'
+export type Page = 'overlay' | 'chat' | 'settings' | 'history'
+
+let icon: NativeImage | null = null
+
+/** Our icon for windows, the taskbar and the Dock; without it Electron shows its own. */
+export function appIcon(): NativeImage {
+  icon ??= nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
+  return icon
+}
 
 export function preloadPath(page: Page): string {
   return join(__dirname, `../preload/${page}.js`)

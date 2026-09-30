@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { keepNavigationInBrowser, loadPage, preloadPath } from './windows'
+import { appIcon, keepNavigationInBrowser, loadPage, preloadPath } from './windows'
 
 let settingsWindow: BrowserWindow | null = null
 
@@ -19,6 +19,7 @@ export function openSettingsWindow(): void {
     fullscreenable: false,
     autoHideMenuBar: true,
     title: 'Quick Ask',
+    icon: appIcon(),
     webPreferences: {
       preload: preloadPath('settings'),
       contextIsolation: true,

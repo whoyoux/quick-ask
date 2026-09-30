@@ -19,7 +19,7 @@ export interface Settings {
   language: Language
   answerLength: AnswerLength
   pttKey: PttKeyId
-  /** null = default spot, top-center of the screen with the mouse cursor. */
+  /** Where the recording pill was dragged; null = top-center of the screen with the mouse cursor. */
   overlayPosition: OverlayPosition | null
   /** null = system default. */
   micDeviceId: string | null
@@ -31,6 +31,8 @@ export interface Settings {
   webSearch: boolean
   /** Draws the pictures the chat model asks for. */
   imageModel: string
+  /** Where the user left the chat window, in screen DIPs. */
+  chatBounds: { x: number; y: number; width: number; height: number } | null
 }
 
 function defaults(): Settings {
@@ -47,7 +49,8 @@ function defaults(): Settings {
     micLabel: null,
     saveHistory: true,
     webSearch: true,
-    imageModel: DEFAULT_IMAGE_MODEL
+    imageModel: DEFAULT_IMAGE_MODEL,
+    chatBounds: null
   }
 }
 

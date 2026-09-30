@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { keepNavigationInBrowser, loadPage, preloadPath } from './windows'
+import { appIcon, keepNavigationInBrowser, loadPage, preloadPath } from './windows'
 
 let historyWindow: BrowserWindow | null = null
 
@@ -22,6 +22,7 @@ export function openHistoryWindow(): void {
     // Resizing briefly exposes the window background; keep it graphite, not white.
     backgroundColor: '#1e1e22',
     title: 'Historia rozmów',
+    icon: appIcon(),
     webPreferences: {
       preload: preloadPath('history'),
       contextIsolation: true,
