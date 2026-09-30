@@ -63,10 +63,12 @@ export class HistoryStore {
     const costUsd = sql<number | null>`(
       select sum(t.cost_usd) from turns t where t.conversation_id = conversations.id
     )`
-    const tokens = sql<number | null>`(
-      select sum(coalesce(t.input_tokens, 0) + coalesce(t.output_tokens, 0)) from turns t
+    const counted = (column: string) => sql<number | null>`(
+      select sum(coalesce(${sql.raw(`t.${column}`)}, 0)) from turns t
       where t.conversation_id = conversations.id and (t.input_tokens is not null or t.output_tokens is not null)
     )`
+    const inputTokens = counted('input_tokens')
+    const outputTokens = counted('output_tokens')
     const needle = query.trim().toLowerCase()
     const pattern = `%${needle.replace(/[\\%_]/g, '\\$&')}%`
     const matching = this.db
@@ -79,7 +81,8 @@ export class HistoryStore {
         title: conversations.title,
         updatedAt: conversations.updatedAt,
         costUsd,
-        tokens,
+        inputTokens,
+        outputTokens,
         firstAnswer
       })
       .from(conversations)
@@ -87,7 +90,11 @@ export class HistoryStore {
       .orderBy(desc(conversations.updatedAt))
       .limit(LIST_LIMIT)
       .all()
-      .map(({ firstAnswer, ...row }) => ({ ...row, snippet: toSnippet(firstAnswer ?? '') }))
+      .map(({ firstAnswer, inputTokens, outputTokens, ...row }) => ({
+        ...row,
+        tokens: inputTokens === null ? null : { input: inputTokens, output: outputTokens ?? 0 },
+        snippet: toSnippet(firstAnswer ?? '')
+      }))
   }
 
   /** The conversation's turns in question order; empty if it doesn't exist. */
