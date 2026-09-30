@@ -6,12 +6,20 @@ import type { PttKeyId } from './push-to-talk'
 export type Language = 'auto' | 'pl' | 'en'
 export type AnswerLength = 'short' | 'normal' | 'detailed'
 
+/** Where the user dragged the overlay: the top-center point of the window, in screen DIPs. */
+export interface OverlayPosition {
+  x: number
+  y: number
+}
+
 export interface Settings {
   chatModel: string
   transcriptionModel: string
   language: Language
   answerLength: AnswerLength
   pttKey: PttKeyId
+  /** null = default spot, top-center of the screen with the mouse cursor. */
+  overlayPosition: OverlayPosition | null
 }
 
 function defaults(): Settings {
@@ -22,7 +30,8 @@ function defaults(): Settings {
     // Auto-detection misfires on short utterances, so pin Polish for Polish systems.
     language: systemLanguage.startsWith('pl') ? 'pl' : 'auto',
     answerLength: 'normal',
-    pttKey: process.platform === 'darwin' ? 'alt-right' : 'ctrl-right'
+    pttKey: process.platform === 'darwin' ? 'alt-right' : 'ctrl-right',
+    overlayPosition: null
   }
 }
 

@@ -33,8 +33,8 @@ export function registerIpc({ overlay, controller, setupStatus, requestAccessibi
   ipcMain.on('overlay:close', (event) => {
     if (fromOverlay(event)) controller.hide()
   })
-  ipcMain.on('overlay:toggle-pin', (event) => {
-    if (fromOverlay(event)) controller.togglePin()
+  ipcMain.on('overlay:new-conversation', (event) => {
+    if (fromOverlay(event)) controller.newConversation()
   })
   ipcMain.on('overlay:copy', (event, text: unknown) => {
     if (fromOverlay(event) && typeof text === 'string') clipboard.writeText(text)

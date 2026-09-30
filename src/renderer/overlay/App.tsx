@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { OverlayView, RecordingIndicator, Turn } from '../../shared/types'
+import type { OverlayView, RecordingIndicator, Turn, TurnTiming } from '../../shared/types'
+import iconUrl from '../assets/icon.svg'
 import { Answer } from './Answer'
 import { useLevels } from './levels'
 
@@ -10,9 +11,12 @@ const INITIAL_VIEW: OverlayView = {
   recording: null,
   notice: null,
   turns: [],
-  pinned: false,
   hint: ''
 }
+
+// Frameless window: these areas move it, everything interactive inside must opt out.
+const DRAG = '[-webkit-app-region:drag]'
+const NO_DRAG = '[-webkit-app-region:no-drag]'
 
 export function App() {
   const [view, setView] = useState(INITIAL_VIEW)
@@ -29,6 +33,15 @@ export function App() {
     return () => observer.disconnect()
   }, [])
 
+  // Esc closes the panel only once the user has clicked into it; elsewhere Esc belongs to other apps.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') api.close()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   return (
     // The padding leaves room for the shadow inside the transparent window.
     <div ref={rootRef} className="inline-block p-3">
@@ -43,7 +56,9 @@ export function App() {
 function Pill({ view }: { view: OverlayView }) {
   const { recording } = view
   return (
-    <section className="flex h-11 items-center gap-2.5 rounded-full border border-border bg-graphite/96 px-4 whitespace-nowrap shadow-[0_8px_28px_rgb(0_0_0/0.35)]">
+    <section
+      className={`flex h-11 items-center gap-2.5 rounded-full border border-border bg-graphite px-4 whitespace-nowrap shadow-[0_6px_20px_rgb(0_0_0/0.3)] ${DRAG}`}
+    >
       {recording ? (
         <>
           <LiveDot />
@@ -51,7 +66,7 @@ function Pill({ view }: { view: OverlayView }) {
           <Elapsed recording={recording} />
           <span>{recording.handsFree ? 'Słucham…' : 'Słucham… puść, aby wysłać'}</span>
           {recording.handsFree && (
-            <span className="ml-1 flex gap-1.5">
+            <span className={`ml-1 flex gap-1.5 ${NO_DRAG}`}>
               <Button variant="primary" onClick={() => api.sendNow()}>
                 Wyślij
               </Button>
@@ -122,7 +137,27 @@ function Panel({ view }: { view: OverlayView }) {
   }
 
   return (
-    <section className="flex w-[600px] flex-col overflow-hidden rounded-2xl border border-border bg-graphite/96 shadow-[0_16px_48px_rgb(0_0_0/0.45)]">
+    <section className="flex w-[600px] flex-col overflow-hidden rounded-2xl border border-border bg-graphite shadow-[0_10px_32px_rgb(0_0_0/0.35)]">
+      <header className={`flex h-10 items-center gap-2 border-b border-border pr-1.5 pl-4 ${DRAG}`}>
+        <img src={iconUrl} alt="" className="size-4 rounded-[4px]" />
+        <span className="text-xs text-muted-foreground">Quick Ask</span>
+        <span className={`ml-auto flex gap-0.5 ${NO_DRAG}`}>
+          {lastAnswer && (
+            <Button variant="ghost" onClick={copy}>
+              {copied ? 'Skopiowano' : 'Kopiuj'}
+            </Button>
+          )}
+          {view.turns.length > 0 && (
+            <Button variant="ghost" onClick={() => api.newConversation()}>
+              Nowa rozmowa
+            </Button>
+          )}
+          <Button variant="ghost" label="Zamknij (aplikacja zostaje w tle)" onClick={() => api.close()}>
+            <span className="text-base leading-none">×</span>
+          </Button>
+        </span>
+      </header>
+
       <div
         ref={threadRef}
         aria-live="polite"
@@ -133,12 +168,13 @@ function Panel({ view }: { view: OverlayView }) {
           followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
         }}
       >
+        {view.turns.length === 0 && <p className="py-2 text-muted-foreground">{view.hint}</p>}
         {view.turns.map((turn) => (
           <TurnView key={turn.id} turn={turn} />
         ))}
       </div>
 
-      <footer className="flex min-h-10 items-center justify-between gap-3 border-t border-border py-1.5 pr-2 pl-5">
+      <footer className={`flex min-h-9 items-center justify-between gap-3 border-t border-border py-1 pr-1.5 pl-5 ${DRAG}`}>
         <div className="min-w-0 truncate text-xs">
           {view.recording ? (
             <span className="inline-flex items-center gap-2 text-foreground">
@@ -152,24 +188,16 @@ function Panel({ view }: { view: OverlayView }) {
             <span className="text-faint">{view.hint}</span>
           )}
         </div>
-        <div className="flex shrink-0 gap-0.5">
-          {view.recording?.handsFree && (
+        {view.recording?.handsFree && (
+          <span className={`flex shrink-0 gap-1 ${NO_DRAG}`}>
             <Button variant="primary" onClick={() => api.sendNow()}>
               Wyślij
             </Button>
-          )}
-          {lastAnswer && (
-            <Button variant="ghost" onClick={copy}>
-              {copied ? 'Skopiowano' : 'Kopiuj'}
+            <Button variant="ghost" onClick={() => api.cancelRecording()}>
+              Anuluj
             </Button>
-          )}
-          <Button variant="ghost" pressed={view.pinned} onClick={() => api.togglePin()}>
-            {view.pinned ? 'Przypięte' : 'Przypnij'}
-          </Button>
-          <Button variant="ghost" label="Zamknij" onClick={() => api.close()}>
-            <span className="text-base leading-none">×</span>
-          </Button>
-        </div>
+          </span>
+        )}
       </footer>
     </section>
   )
@@ -188,7 +216,23 @@ function TurnView({ turn }: { turn: Turn }) {
       )}
       {turn.answer && <Answer text={turn.answer} streaming={turn.status === 'answering'} />}
       {turn.error && <p className="mt-1.5 text-brand-light">{turn.error}</p>}
+      {turn.status === 'done' && <Timing timing={turn.timing} />}
     </article>
+  )
+}
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1).replace('.', ',')} s`
+}
+
+/** Which models answered and how fast, to help pick the quickest ones in the menu. */
+function Timing({ timing }: { timing: TurnTiming }) {
+  if (timing.transcriptionMs === null || timing.firstTokenMs === null) return null
+  return (
+    <p className="mt-2 text-[11px] text-faint">
+      {timing.transcriptionModel} {seconds(timing.transcriptionMs)} → {timing.chatModel}{' '}
+      {seconds(timing.firstTokenMs)}
+    </p>
   )
 }
 
@@ -198,26 +242,23 @@ function Button({
   children,
   onClick,
   variant = 'outline',
-  pressed,
   label
 }: {
   children: ReactNode
   onClick: () => void
   variant?: 'outline' | 'ghost' | 'primary'
-  pressed?: boolean
   label?: string
 }) {
-  const quiet = pressed ? 'text-brand-light' : 'text-muted-foreground hover:text-foreground'
   const variants = {
-    outline: `border-border hover:bg-white/6 ${quiet}`,
-    ghost: `border-transparent hover:bg-white/6 ${quiet}`,
+    outline: 'border-border text-muted-foreground hover:bg-white/6 hover:text-foreground',
+    ghost: 'border-transparent text-muted-foreground hover:bg-white/6 hover:text-foreground',
     primary: 'border-brand bg-brand text-white hover:bg-[#f04a50]'
   }
   return (
     <button
       type="button"
       aria-label={label}
-      aria-pressed={pressed}
+      title={label}
       onClick={onClick}
       className={`rounded-lg border px-2.5 py-1 text-xs ${variants[variant]}`}
     >

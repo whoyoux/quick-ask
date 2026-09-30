@@ -1,6 +1,7 @@
 import { systemPreferences } from 'electron'
 import type { OverlayView, RecordingOutcome, Turn } from '../shared/types'
 import { debug } from './debug'
+import { modelName } from './models'
 import { OpenRouterError, streamChat, transcribe, type ChatMessage } from './openrouter'
 import type { OverlayWindow } from './overlay-window'
 import { buildSystemPrompt } from './prompt'
@@ -27,10 +28,11 @@ export interface ControllerHooks {
   onConversationChange(): void
   openSettings(): void
   /** Footer hint, e.g. "Przytrzymaj prawy Ctrl, aby dopytać". */
-  hint(): string
+  hint(followUp: boolean): string
 }
 
 function audioFormat(mimeType: string): string {
+  if (mimeType.includes('wav')) return 'wav'
   if (mimeType.includes('ogg')) return 'ogg'
   if (mimeType.includes('mp4')) return 'm4a'
   return 'webm'
@@ -45,7 +47,8 @@ function micPermissionGranted(): boolean {
  * press → record → transcribe → stream the answer.
  *
  * Thread rule: a question asked while the answer panel is open continues that conversation;
- * once the panel is closed, the next question starts a new one.
+ * once the panel is closed, the next question starts a new one. The panel never closes on its
+ * own: only its close button (or the tray) hides it, and the app keeps running in the tray.
  */
 export class Controller {
   private readonly view: OverlayView = {
@@ -53,7 +56,6 @@ export class Controller {
     recording: null,
     notice: null,
     turns: [],
-    pinned: false,
     hint: ''
   }
   private recorderPhase: RecorderPhase = 'idle'
@@ -120,34 +122,27 @@ export class Controller {
 
   // Overlay --------------------------------------------------------------------------------
 
+  /** Esc anywhere cancels a recording in progress; it never closes the panel. */
   escape(): void {
     if (this.recorderPhase === 'recording') this.cancelRecording()
-    else if (this.overlay.visible) this.hide()
-  }
-
-  /** Any click on screen: clicking outside the panel dismisses it, like a popover. */
-  mouseDown(): void {
-    if (!this.overlay.visible || this.view.pinned || this.recorderPhase !== 'idle') return
-    if (!this.overlay.containsCursor()) this.hide()
-  }
-
-  /** Fallback dismissal when the global hook isn't available. */
-  overlayBlurred(): void {
-    if (!this.view.pinned && this.recorderPhase === 'idle') this.hide()
   }
 
   hide(): void {
     this.clearNoticeTimer()
     this.view.mode = 'hidden'
     this.view.notice = null
-    this.view.pinned = false
     this.overlay.hide()
     this.pushView()
   }
 
-  togglePin(): void {
-    this.view.pinned = !this.view.pinned
+  /** Clears the thread but keeps the panel open for the next question. */
+  newConversation(): void {
+    this.conversation?.abort()
+    this.conversation = null
+    this.view.turns = []
+    this.view.notice = null
     this.pushView()
+    this.hooks.onConversationChange()
   }
 
   showLastConversation(): void {
@@ -204,7 +199,7 @@ export class Controller {
 
   private beginRecording(handsFree: boolean): void {
     this.handsFree = handsFree
-    this.continuing = this.overlay.visible && this.view.mode === 'panel' && this.hasConversation
+    this.continuing = this.overlay.visible && this.view.mode === 'panel'
     this.recorderPhase = 'arming'
     this.overlay.recorder({ type: 'start', deviceId: null })
   }
@@ -260,7 +255,19 @@ export class Controller {
       this.view.turns = []
     }
     const { signal } = this.conversation
-    const turn: Turn = { id: this.nextTurnId++, question: '', answer: '', status: 'transcribing', error: null }
+    const turn: Turn = {
+      id: this.nextTurnId++,
+      question: '',
+      answer: '',
+      status: 'transcribing',
+      error: null,
+      timing: {
+        transcriptionModel: modelName(current.transcriptionModel),
+        transcriptionMs: null,
+        chatModel: modelName(current.chatModel),
+        firstTokenMs: null
+      }
+    }
     this.view.turns.push(turn)
     this.view.mode = 'panel'
     this.view.notice = null
@@ -269,6 +276,7 @@ export class Controller {
     this.hooks.onConversationChange()
 
     try {
+      const transcriptionStart = performance.now()
       const question = await transcribe({
         apiKey,
         model: current.transcriptionModel,
@@ -277,10 +285,12 @@ export class Controller {
         language: current.language === 'auto' ? null : current.language,
         signal
       })
+      turn.timing.transcriptionMs = performance.now() - transcriptionStart
       if (signal.aborted) return
       if (isLikelyHallucination(question)) {
         this.view.turns = this.view.turns.filter((t) => t !== turn)
-        if (this.view.turns.length === 0) this.view.mode = 'pill'
+        // An open panel stays open; only a fresh question falls back to the notice pill.
+        if (!continuing) this.view.mode = 'pill'
         this.hooks.onConversationChange()
         this.showNotice('Nie usłyszałem pytania.')
         return
@@ -290,16 +300,19 @@ export class Controller {
       turn.status = 'answering'
       this.pushView()
 
+      const answerStart = performance.now()
       await streamChat({
         apiKey,
         model: current.chatModel,
         messages: this.buildMessages(turn),
         signal,
         onDelta: (text) => {
+          turn.timing.firstTokenMs ??= performance.now() - answerStart
           turn.answer += text
           this.scheduleRender()
         }
       })
+      debug('timing', turn.timing)
       if (turn.answer.trim()) {
         turn.status = 'done'
       } else {
@@ -357,7 +370,7 @@ export class Controller {
   private pushView(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer)
     this.renderTimer = null
-    this.view.hint = this.hooks.hint()
+    this.view.hint = this.hooks.hint(this.view.turns.length > 0)
     debug('view', {
       mode: this.view.mode,
       recording: Boolean(this.view.recording),

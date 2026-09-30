@@ -10,7 +10,10 @@ odpowiedź z modelu AI. Ustawienia są w menu ikony w zasobniku systemowym (tray
 | Stack | Electron + TypeScript + electron-vite; renderer w React 19 + Tailwind v4 |
 | Renderowanie odpowiedzi | [Streamdown](https://streamdown.ai): markdown streamowany token po tokenie, podświetlanie kodu (Shiki) |
 | Klucze AI | BYOK przez **OpenRouter**: jeden klucz, dowolny model; docelowo logowanie OAuth PKCE zamiast wklejania |
-| Przepływ | nagranie (webm/opus) → `POST /api/v1/audio/transcriptions` → tekst → `POST /api/v1/chat/completions` (stream) |
+| Przepływ | nagranie (WAV 16 kHz mono) → `POST /api/v1/audio/transcriptions` → tekst → `POST /api/v1/chat/completions` (stream) |
+| Format nagrania | WAV zamiast WebM: przyjmuje go każdy model transkrypcji (np. Grok STT nie obsługuje WebM) |
+| Okno odpowiedzi | nie znika samo; zamyka je tylko ×, aplikacja zostaje w tle; można je przeciągać, położenie jest zapamiętywane |
+| Tło okna | pełny grafit: Windows rysuje blur (acrylic) tylko dla aktywnego okna, a overlay celowo nie zabiera fokusu |
 | Skrót | **push-to-talk**: trzymasz = nagrywa, puszczasz = wysyła. `uiohook-napi` (globalne keydown/keyup) |
 | Klawisz domyślny | Windows/Linux: prawy Ctrl (nie prawy Alt, bo to AltGr dla polskich znaków), macOS: prawy Option |
 | Wątki | panel otwarty + klawisz = dopytanie w tym samym wątku; panel zamknięty = nowa rozmowa |
@@ -44,14 +47,18 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [x] T2.4 Czytelne błędy: zły klucz (401), brak środków (402), limit (429), brak sieci, niedostępny model
 - [x] T2.5 Nowa rozmowa przerywa zapytania poprzedniej (AbortController); zamknięcie panelu nie przerywa, więc „Wróć do ostatniej rozmowy” pokaże całą odpowiedź
 - [ ] T2.6 Test end-to-end z prawdziwym kluczem na Windows (nagranie → transkrypcja → odpowiedź)
+- [x] T2.7 Nagrywanie do WAV 16 kHz przez AudioWorklet (zgodność z każdym modelem transkrypcji)
+- [x] T2.8 Czasy pod odpowiedzią: transkrypcja i pierwszy token odpowiedzi, z nazwami modeli
+- [x] T2.9 Modele transkrypcji: Grok STT (xAI) i Deepgram Nova-3
 
 ### M3: Panel odpowiedzi
 - [x] T3.1 Panel: transkrypt pytania + odpowiedź przez Streamdown, dopasowanie wielkości okna do treści
 - [x] T3.2 Reguła wątku + limit historii wysyłanej do modelu (10 ostatnich wymian)
-- [x] T3.3 Zamykanie: Esc, przycisk ×, klik poza panelem; kopiowanie odpowiedzi; przypinanie
+- [x] T3.3 Panel nie znika sam: zamyka go tylko × (albo Esc, gdy okno jest aktywne); „Nowa rozmowa” czyści wątek; kopiowanie odpowiedzi
 - [x] T3.4 Linki z odpowiedzi otwierane w przeglądarce, nigdy w overlayu
-- [ ] T3.5 Natywny blur: `vibrancy` na macOS, `backgroundMaterial: 'acrylic'` na Windows 11 (teraz: półprzezroczyste tło)
+- [ ] T3.5 Natywny blur na macOS (`vibrancy`); na Windows zostaje pełne tło, bo acrylic działa tylko w aktywnym oknie
 - [ ] T3.6 Zwijanie starszych pytań przy długich rozmowach
+- [x] T3.7 Przeciąganie okna za nagłówek lub stopkę, zapamiętane położenie, „Przywróć położenie okna” w menu
 
 ### M4: Ustawienia i onboarding
 - [x] T4.1 Menu w zasobniku: model odpowiedzi, model transkrypcji, język, długość, klawisz, autostart, ostatnia rozmowa

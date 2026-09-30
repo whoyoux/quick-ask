@@ -1,24 +1,9 @@
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { CHAT_MODELS, TRANSCRIPTION_MODELS } from './models'
 import { PTT_KEYS, type PttKeyId } from './push-to-talk'
 import { settings, type AnswerLength, type Language } from './settings'
-
-const CHAT_MODELS: { id: string; label: string }[] = [
-  { id: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash (szybki)' },
-  { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 (szybki)' },
-  { id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 mini (szybki)' },
-  { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
-  { id: 'openai/gpt-5.5', label: 'GPT-5.5' },
-  { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' }
-]
-
-const TRANSCRIPTION_MODELS: { id: string; label: string }[] = [
-  { id: 'openai/whisper-large-v3-turbo', label: 'Whisper Large v3 Turbo (szybki, tani)' },
-  { id: 'openai/gpt-4o-mini-transcribe', label: 'GPT-4o mini Transcribe' },
-  { id: 'openai/gpt-4o-transcribe', label: 'GPT-4o Transcribe (dokładny)' },
-  { id: 'mistralai/voxtral-mini-transcribe', label: 'Voxtral Mini Transcribe' }
-]
 
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'auto', label: 'Wykrywaj automatycznie' },
@@ -120,7 +105,7 @@ export class TrayMenu {
 
     const chatModels = CHAT_MODELS.some((m) => m.id === current.chatModel)
       ? CHAT_MODELS
-      : [{ id: current.chatModel, label: current.chatModel }, ...CHAT_MODELS]
+      : [{ id: current.chatModel, name: current.chatModel, label: current.chatModel }, ...CHAT_MODELS]
 
     const template: MenuItemConstructorOptions[] = [
       status,
@@ -180,6 +165,9 @@ export class TrayMenu {
           click: () => settings.update({ pttKey: k.id })
         }))
       },
+      ...(current.overlayPosition
+        ? [{ label: 'Przywróć położenie okna', click: () => settings.update({ overlayPosition: null }) }]
+        : []),
       { type: 'separator' },
       { label: 'Klucz API OpenRouter…', click: () => this.actions.openSettings() },
       ...(process.platform === 'linux'

@@ -27,6 +27,8 @@ export default defineConfig({
     root: resolve(__dirname, 'src/renderer'),
     plugins: [react(), tailwindcss()],
     build: {
+      // The audio worklet must be a real file: our CSP (script-src 'self') blocks data: URLs.
+      assetsInlineLimit: (file) => (file.endsWith('.worklet.js') ? false : undefined),
       rollupOptions: {
         input: {
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),

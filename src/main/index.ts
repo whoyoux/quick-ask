@@ -24,7 +24,10 @@ function allowMicrophoneFor(contents: WebContents): void {
 }
 
 function main(): void {
-  const overlay = new OverlayWindow()
+  const overlay = new OverlayWindow({
+    saved: () => settings.get().overlayPosition,
+    userMoved: (position) => settings.update({ overlayPosition: position })
+  })
   allowMicrophoneFor(overlay.webContents)
 
   let tray: TrayMenu | null = null
@@ -36,10 +39,12 @@ function main(): void {
     onRecordingChange: (recording) => tray?.setRecording(recording),
     onConversationChange: () => tray?.rebuild(),
     openSettings: openSettingsWindow,
-    hint: () =>
-      ptt.isRunning
-        ? `Przytrzymaj ${pttLabel()}, aby dopytać`
-        : 'Kliknij ikonę Quick Ask w zasobniku, aby dopytać'
+    hint: (followUp) => {
+      const goal = followUp ? 'dopytać' : 'zadać pytanie'
+      return ptt.isRunning
+        ? `Przytrzymaj ${pttLabel()}, aby ${goal}`
+        : `Kliknij ikonę Quick Ask w zasobniku, aby ${goal}`
+    }
   })
 
   const ptt = new PushToTalk({
@@ -47,8 +52,7 @@ function main(): void {
     onHold: () => controller.keyHeld(),
     onRelease: () => controller.keyReleased(),
     onCancel: () => controller.keyCancelled(),
-    onEscape: () => controller.escape(),
-    onMouseDown: () => controller.mouseDown()
+    onEscape: () => controller.escape()
   })
   ptt.setKey(settings.get().pttKey)
 
@@ -105,13 +109,11 @@ function main(): void {
   else ptt.start()
   refresh()
 
-  // Without the hook (no permission, or Wayland) the panel closes when it loses focus instead.
-  overlay.win.on('blur', () => {
-    if (!ptt.isRunning) controller.overlayBlurred()
-  })
-
+  let previous = settings.get()
   settings.onChange((current) => {
-    ptt.setKey(current.pttKey)
+    if (current.pttKey !== previous.pttKey) ptt.setKey(current.pttKey)
+    if (previous.overlayPosition && !current.overlayPosition) overlay.resetPosition()
+    previous = current
     refresh()
   })
 

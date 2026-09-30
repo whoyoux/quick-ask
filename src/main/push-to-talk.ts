@@ -42,8 +42,6 @@ export interface PushToTalkHandlers {
   /** A tap, or the trigger was part of another shortcut: throw the recording away. */
   onCancel(): void
   onEscape(): void
-  /** Any mouse button pressed anywhere on screen. */
-  onMouseDown(): void
 }
 
 type Phase = 'idle' | 'pressed' | 'holding'
@@ -131,7 +129,6 @@ export class PushToTalk {
       debug('cancelled by a mouse click')
       this.cancel()
     }
-    this.handlers.onMouseDown()
   }
 
   private otherModifiersHeld(event: UiohookKeyboardEvent): boolean {

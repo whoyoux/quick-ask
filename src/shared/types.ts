@@ -2,12 +2,22 @@
 
 export type TurnStatus = 'transcribing' | 'answering' | 'done' | 'error'
 
+/** How long each step took, shown under the answer to help compare models. */
+export interface TurnTiming {
+  transcriptionModel: string
+  transcriptionMs: number | null
+  chatModel: string
+  /** From sending the question to the first answer token. */
+  firstTokenMs: number | null
+}
+
 export interface Turn {
   id: number
   question: string
   answer: string
   status: TurnStatus
   error: string | null
+  timing: TurnTiming
 }
 
 export interface RecordingIndicator {
@@ -23,7 +33,6 @@ export interface OverlayView {
   recording: RecordingIndicator | null
   notice: string | null
   turns: Turn[]
-  pinned: boolean
   /** Footer hint, e.g. how to ask a follow-up. */
   hint: string
 }
@@ -52,7 +61,7 @@ export interface OverlayApi {
   sendRecording(outcome: RecordingOutcome): void
   resize(size: { width: number; height: number }): void
   close(): void
-  togglePin(): void
+  newConversation(): void
   copy(text: string): void
   sendNow(): void
   cancelRecording(): void
