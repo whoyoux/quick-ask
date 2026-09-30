@@ -19,6 +19,7 @@ odpowiedź z modelu AI. Ustawienia są w menu ikony w zasobniku systemowym (tray
 | Wątki | okno rozmowy otwarte (także zminimalizowane lub przykryte) + klawisz = dopytanie w tym samym wątku; zamknięte = nowa rozmowa |
 | Klucz API | tylko w procesie głównym, szyfrowany przez `safeStorage` (Keychain / DPAPI / libsecret) |
 | Bezpieczeństwo UI | renderer z `sandbox` + `contextIsolation`; w odpowiedziach bez surowego HTML i bez obrazków, linki tylko http(s)/mailto i zawsze w przeglądarce |
+| Aktualizacje | `electron-updater` z GitHub Releases (tylko opublikowane wydania, szkice są pomijane); na macOS samo powiadomienie, bo Squirrel.Mac wymaga podpisu |
 | Wygląd | grafitowe tło (#1E1E22) + czerwony akcent (#E9383F); ikona: „Q” jako dymek z paskami głosu |
 | Narzędzia AI | kilka małych, pewnych narzędzi zamiast katalogu: sandbox JS (obliczenia i dane), wykresy, kursy NBP, pogoda, strefy czasowe; każde można wyłączyć. Niczego, co czyta prywatne dane (schowek, ekran), model nie wywołuje sam |
 
@@ -80,8 +81,8 @@ Legenda: `[x]` zrobione, `[ ]` do zrobienia.
 - [ ] T5.2 Windows: test na skalowaniu 125–200% i z aplikacjami uruchomionymi jako administrator
 - [ ] T5.3 Linux: test na X11, instrukcja podpięcia `quick-ask --toggle` pod skrót systemowy na Waylandzie
 - [x] T5.4 GitHub Actions: `ci.yml` (typecheck + build na każdy push) i `release.yml` (instalatory Windows, macOS arm64/x64, Linux po tagu `v*` jako szkic release'u); paczki macOS i Linux jeszcze niesprawdzone
-- [ ] T5.5 Podpisywanie: notaryzacja Apple (Developer ID), podpis Windows (Azure Trusted Signing)
-- [ ] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases)
+- [ ] T5.5 Podpisywanie: notaryzacja Apple (Developer ID), podpis Windows (Azure Trusted Signing); potem instalacja aktualizacji także na macOS (`canInstall` w `src/main/updater.ts`)
+- [x] T5.6 Auto-aktualizacje (`electron-updater` + GitHub Releases): sprawdzanie 10 s po starcie i co 4 h (przełącznik w menu) oraz ręcznie; Windows i AppImage pobierają w tle i instalują przy zamknięciu albo od razu z menu, .deb instaluje z menu (pyta o hasło); macOS tylko powiadamia i linkuje do wydania, dopóki apka nie jest podpisana (T5.5); release.yml dołącza `latest*.yml`, zipy macOS i blockmapy
 
 ### M6: Po MVP
 - [x] T6.2 Pisanie pytania zamiast mówienia: pole tekstowe w panelu (Enter wysyła, Shift+Enter nowa linia, Esc czyści szkic) i „Napisz pytanie…” w menu

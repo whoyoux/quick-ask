@@ -22,10 +22,19 @@ asarUnpack:
   - node_modules/uiohook-napi/**
   # The JavaScript sandbox's worker thread loads its script from disk (src/main/tools/javascript.ts).
   - out/main/javascript.worker-*.js
+# Where electron-updater looks for new versions (app-update.yml inside the app). Builds also write
+# latest*.yml next to the installers; the Release workflow attaches them to the GitHub Release.
+publish:
+  provider: github
+  owner: whoyoux
+  repo: quick-ask
 
 mac:
   target:
     - target: dmg
+      arch: [arm64, x64]
+    # electron-updater installs macOS updates from the zip, not the dmg.
+    - target: zip
       arch: [arm64, x64]
   category: public.app-category.productivity
   hardenedRuntime: true
